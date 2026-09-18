@@ -7,14 +7,23 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+## [2.2.1] — 2026-09-18
+
+### Fixed
+
+- **Custom icons now fill their intended area.** Landscape and portrait
+  images are center-cropped instead of being placed inside a transparent
+  square, and excess transparent padding around PNG artwork is trimmed.
+  This prevents selected icons from appearing tiny inside app tiles.
+
+## [2.2.0] — 2026-06-26
+
 ### Added
 
 - **Custom app icons.** Long-press any app to choose a local PNG, JPEG,
   or WebP image. BareLauncher keeps a private optimized copy, applies it
   to both launcher tiles and shortcut chips, and provides a Reset icon
   action to restore the app-provided artwork.
-
-## [2.2.0] — 2026-06-26
 
 ### What's new
 

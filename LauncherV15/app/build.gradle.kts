@@ -429,8 +429,14 @@ android {
         // (pick a folder, rotate each restart or every 5–60 min; the timer
         // runs foreground-only and the instant snapshot cold-start is
         // preserved). SemVer MINOR — additive, no behaviour change when unused.
-        versionCode   = 30
-        versionName   = "2.2.0"
+        // Bumped 30 → 31: 2.2.1 fixes custom-icon normalization. Full-bleed
+        // landscape and portrait images are center-cropped instead of being
+        // letterboxed into a transparent square, while transparent PNG-style
+        // icons have excess outer padding trimmed without stretching.
+        // SemVer PATCH — existing launcher behavior is unchanged unless a
+        // custom icon is selected.
+        versionCode   = 31
+        versionName   = "2.2.1"
         resourceConfigurations += listOf("en")
 
         // Instrumentation test runner. Required so :app:connectedDebugAndroidTest
