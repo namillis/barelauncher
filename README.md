@@ -9,12 +9,10 @@
 A tiny, privacy-first home screen for Android TV, Google TV & Fire TV.
 No ads. No telemetry. No recommendations. Just your apps.
 
-[![Latest release](https://img.shields.io/github/v/release/f102mithunysypdlcjr-pixel/BareLauncherv3?style=for-the-badge&color=22c55e&label=latest)](../../releases/latest)
-[![Download APK](https://img.shields.io/badge/Download-APK-09090b?style=for-the-badge&logo=android&logoColor=22c55e)](../../releases/latest/download/BareLauncher.apk)
-[![Downloader code 3465597](https://img.shields.io/badge/Downloader-3465597-FF6B2C?style=for-the-badge&logo=amazonfiretv&logoColor=white)](https://aftv.news/3465597)
-[![Website](https://img.shields.io/badge/Website-Live-3A86FF?style=for-the-badge)](https://f102mithunysypdlcjr-pixel.github.io/BareLauncherv3/)
+[![Latest release](https://img.shields.io/github/v/release/namillis/barelauncher?style=for-the-badge&color=22c55e&label=latest)](https://github.com/namillis/barelauncher/releases/latest)
+[![Download APK](https://img.shields.io/badge/Download-APK-09090b?style=for-the-badge&logo=android&logoColor=22c55e)](https://github.com/namillis/barelauncher/releases/latest/download/BareLauncher.apk)
+[![Downloader code 9049616](https://img.shields.io/badge/Downloader-9049616-FF6B2C?style=for-the-badge&logo=amazonfiretv&logoColor=white)](http://aftv.news/9049616)
 [![License](https://img.shields.io/badge/License-PolyForm%20NC%201.0-8b5cf6?style=for-the-badge)](./LICENSE)
-[![Reddit](https://img.shields.io/badge/Reddit-r%2FBareLauncher-FF4500?style=for-the-badge&logo=reddit&logoColor=white)](https://www.reddit.com/r/BareLauncher/)
 
 </div>
 
@@ -110,15 +108,15 @@ Open the **Downloader** app (by AFTVnews) and enter the code below. It always in
 
 <div align="center">
 
-<a href="https://aftv.news/3465597" target="_blank" rel="noopener">
-  <img src="https://img.shields.io/badge/AFTVnews%20Downloader-Code%203465597-FF6B2C?style=for-the-badge&logo=amazonfiretv&logoColor=white" alt="BareLauncher Downloader code 3465597 — always the latest release" height="44" />
+<a href="http://aftv.news/9049616" target="_blank" rel="noopener">
+  <img src="https://img.shields.io/badge/AFTVnews%20Downloader-Code%209049616-FF6B2C?style=for-the-badge&logo=amazonfiretv&logoColor=white" alt="BareLauncher Downloader code 9049616 — always the latest release" height="44" />
 </a>
 
 </div>
 
 ### Or sideload the APK manually
 
-1. Download **[`BareLauncher.apk`](../../releases/latest/download/BareLauncher.apk)** from the latest release.
+1. Download **[`BareLauncher.apk`](https://github.com/namillis/barelauncher/releases/latest/download/BareLauncher.apk)** from the latest release.
 2. Move it to your TV — USB stick, network share, or an app like *LocalSend*.
 3. Allow installs from unknown sources when prompted.
 4. Open the APK and install.
@@ -135,18 +133,6 @@ Open the **Downloader** app (by AFTVnews) and enter the code below. It always in
 ## Philosophy
 
 Every line has to justify its performance cost. No needless animations, no background junk, no overdesigned UI — just a launcher that feels **instant**.
-
----
-
-## Support
-
-BareLauncher is **completely free** and always will be. If it made your TV feel fast again, a coffee genuinely helps keep it going. ☕
-
-<div align="center">
-<a href="https://ko-fi.com/barelauncher" target="_blank" rel="noopener">
-  <img src="https://ko-fi.com/img/githubbutton_sm.svg" alt="Support BareLauncher on Ko-fi" />
-</a>
-</div>
 
 ---
 
