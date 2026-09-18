@@ -19,14 +19,17 @@
     <string name="cd_open_app_info">Open app info in system settings</string>
     <string name="cd_move_app_position">Move app position</string>
     <string name="cd_hide_app">Hide app from shelf</string>
+    <string name="cd_change_app_icon">Choose a custom app icon</string>
+    <string name="cd_reset_app_icon">Restore the app\'s original icon</string>
 
     <!-- Context menu items shown over a focused shelf icon. The leading
-         glyph is a Unicode symbol (cross / info / left-right arrows) drawn
-         inline with the label as part of the visible text. -->
+         glyph is a Unicode symbol drawn inline with the visible label. -->
     <string name="menu_uninstall">\u2715  Uninstall</string>
     <string name="menu_app_info">\u24D8  App Info</string>
     <string name="menu_move">\u21D4  Move</string>
     <string name="menu_hide">\u2298  Hide</string>
+    <string name="menu_change_icon">\u25A3  Change icon</string>
+    <string name="menu_reset_icon">\u21B6  Reset icon</string>
 
     <!-- Keymap overlay -->
     <string name="keymap_not_assigned">Not assigned</string>
@@ -93,6 +96,10 @@
     <string name="toast_no_browser">No browser available to open the link</string>
     <string name="toast_wallpaper_load_failed">Could not load wallpaper</string>
     <string name="toast_wallpaper_no_permission">Could not get permission for this image</string>
+    <!-- %1$s is the user-visible label of the customized app. -->
+    <string name="toast_custom_icon_set">Custom icon set for %1$s. Long-press to reset.</string>
+    <string name="toast_custom_icon_failed">Could not use that image</string>
+    <string name="toast_custom_icon_reset">Original icon restored</string>
     <!-- %1$s is the user-visible label of the app being uninstalled. -->
     <string name="toast_cannot_uninstall">Cannot uninstall %1$s</string>
 

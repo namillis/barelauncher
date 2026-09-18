@@ -2,7 +2,7 @@ package com.bare.launcher;
 
 /**
  * The surface that currently owns the shared reorder context menu (the
- * "Move / App Info / Uninstall" plate). Either the bottom home shelf
+ * "Hide / Change icon / App Info / Uninstall / Move" plate). Either the bottom home shelf
  * ({@code RecyclingShelfView}) or the pull-down app drawer
  * ({@code AppDrawer}) can be the active reorder host at any one time — never
  * both, since the drawer is only reorder-able while it is open (covering the
@@ -32,8 +32,17 @@ interface ReorderHost {
     /** The user activated the App Info row. */
     void onMenuAppInfo();
 
+    /** The user activated Change icon and should be shown the local image picker. */
+    void onMenuChangeIcon();
+
+    /** The user activated Reset icon and should return to the app-provided artwork. */
+    void onMenuResetIcon();
+
     /** The user activated the Move row (confirm reorder). */
     void onMenuMove();
+
+    /** Whether the selected app currently has a persistent custom icon. */
+    boolean menuAppHasCustomIcon();
 
     /** {@code true} when the app the menu is currently acting on is a TV
      *  input (HDMI/AV/…). The activity uses this to suppress the Uninstall
