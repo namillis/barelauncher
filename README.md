@@ -64,7 +64,8 @@ Most TV launchers are heavy, online, and crowded with promotions. BareLauncher i
 | ⚡ **Instant navigation** | Zero-lag scrolling on a TV remote via a custom recycling shelf — no `RecyclerView`. |
 | 🗂️ **Home row + app drawer** | Favorites on the home screen, a pull-down drawer for the rest. Reorder everything freely with the D-pad. |
 | 🎛️ **Button shortcuts** | Assign remote colour/menu keys to any app directly from the home screen — no Accessibility Service required. |
-| 🗃️ **Manage apps** | Long-press any app to move, hide, open App info, or uninstall. Hidden apps stay installed, just out of sight. |
+| 🗃️ **Manage apps** | Long-press any app to move, hide, open App info, uninstall, or choose a custom icon. Hidden apps stay installed, just out of sight. |
+| 🎨 **Custom app icons** | Pick a local PNG, JPEG, or WebP for any app and reset to its original artwork at any time. Images stay private on the device. |
 | 🖼️ **Wallpaper system** | Static wallpapers, folder-based slideshows, startup wallpaper rotation, and hardware bitmap rendering that saves 8–32 MB of RAM. |
 | 🎞️ **Wallpaper slideshows** | Turn any folder of photos or wallpapers into a rotating home screen background. Supports internal storage and USB/SD media with configurable intervals (20 sec–3 min). |
 | 🌙 **Hide UI when idle** | Automatically hides the launcher interface after inactivity, leaving only the clock so your wallpapers can fill the entire screen until the screensaver starts. |

@@ -23,6 +23,7 @@ import android.graphics.RectF;
 import android.graphics.RenderEffect;
 import android.graphics.Shader;
 import android.graphics.Typeface;
+import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.Drawable;
 import android.net.Uri;
 import android.os.Build;
@@ -145,6 +146,7 @@ public class LauncherActivity extends Activity {
     private static final int    REQ_PICK_WP    = 42;
     private static final int    REQ_BACKUP_EXPORT = 43;
     private static final int    REQ_BACKUP_IMPORT = 44;
+    private static final int    REQ_PICK_ICON  = 45;
     private static final int    REQ_PERM_MEDIA = 71;   // runtime media-read permission
     private static final String BACKUP_FILENAME   = "barelauncher-settings.txt";
     /** Slideshow duration steps (seconds):
@@ -436,6 +438,12 @@ public class LauncherActivity extends Activity {
      *  shelf renders icons in the very first frame. See {@link
      *  IconDiskCache} javadoc for the full pipeline. */
     private volatile IconDiskCache            iconDiskCache;
+    /** Durable source images selected by the user. Unlike IconDiskCache,
+     *  these are user data rather than a disposable rendering cache. */
+    private volatile CustomIconStore customIconStore;
+    /** Package and label awaiting the system image picker's result. */
+    private String pendingCustomIconPackage;
+    private String pendingCustomIconLabel;
 
     // v1.5.0: widened from List<RecyclingShelfView.CellView> to List<IconTarget>
     // so the one icon pipeline feeds both the home-row cells and the app
@@ -593,10 +601,14 @@ public class LauncherActivity extends Activity {
      *  entry to reorder mode by whichever of the home shelf / app drawer is
      *  reordering. See {@link ReorderHost}. */
     private ReorderHost        menuHost      = null;
-    private       TextView    menuHide      = null;
-    private       TextView    menuUninstall = null;
-    private       TextView    menuAppInfo   = null;
-    private       TextView    menuMove      = null;
+    private       TextView    menuHide       = null;
+    private       TextView    menuChangeIcon = null;
+    private       TextView    menuResetIcon  = null;
+    private       TextView    menuUninstall  = null;
+    private       TextView    menuAppInfo    = null;
+    private       TextView    menuMove       = null;
+    /** Snapshot of custom-icon presence for the app owning the open menu. */
+    private boolean menuHasCustomIcon = false;
     private final int[]    menuCellLoc      = new int[2];
     private final int[]    menuRootLoc      = new int[2];
     private final int[]    menuOverlayLoc   = new int[2];
@@ -1050,6 +1062,15 @@ public class LauncherActivity extends Activity {
                         // disk read of the stale bytes.
                         IconDiskCache dc = iconDiskCache;
                         if (dc != null) dc.delete(pkg);
+                        // A custom icon is user data, not a disposable cache.
+                        // Keep it through the REMOVED/ADDED pair emitted by an
+                        // app upgrade, but remove it after a real uninstall so
+                        // orphan images do not accumulate indefinitely.
+                        if (Intent.ACTION_PACKAGE_REMOVED.equals(action)
+                                && !intent.getBooleanExtra(Intent.EXTRA_REPLACING, false)) {
+                            CustomIconStore store = customIconStore;
+                            if (store != null) store.delete(pkg);
+                        }
                     }
                 }
             }
@@ -1846,6 +1867,9 @@ public class LauncherActivity extends Activity {
         if (iconExecutor != null) try { iconExecutor.shutdownNow(); } catch (Throwable ignored) { /* best-effort */ }
         if (appExecutor  != null) try { appExecutor .shutdownNow(); } catch (Throwable ignored) { /* best-effort */ }
         if (iconDiskCache != null) iconDiskCache = null;
+        customIconStore = null;
+        pendingCustomIconPackage = null;
+        pendingCustomIconLabel = null;
         if (iconCache != null) iconCache.evictAll();
         if (bannerCache != null) bannerCache.evictAll();
         iconInflight.clear();
@@ -1875,7 +1899,8 @@ public class LauncherActivity extends Activity {
         aboutQrView = null; aboutQrImage = null; aboutQrCaption = null;
         aboutQrLink = null; aboutQrUrl = null;
         aboutRows[0] = null; aboutRows[1] = null;
-        menuOverlay = null; menuHide = null; menuUninstall = null; menuAppInfo = null; menuMove = null;
+        menuOverlay = null; menuHide = null; menuChangeIcon = null; menuResetIcon = null;
+        menuUninstall = null; menuAppInfo = null; menuMove = null;
         keymapOverlay = null; keymapColumn = null; keymapCard = null;
         keymapPickerView = null; keymapPickerTitle = null;
         keymapPickerHsv = null; keymapPickerStrip = null;
@@ -2405,6 +2430,46 @@ public class LauncherActivity extends Activity {
             if (h != null) h.onMenuHide();
         });
 
+        menuChangeIcon = new TextView(this);
+        menuChangeIcon.setText(R.string.menu_change_icon);
+        menuChangeIcon.setTextColor(Color.WHITE);
+        menuChangeIcon.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 13);
+        menuChangeIcon.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+        menuChangeIcon.setGravity(Gravity.CENTER);
+        menuChangeIcon.setPadding(dp(20), dp(11), dp(20), dp(11));
+        menuChangeIcon.setClickable(true);
+        menuChangeIcon.setFocusable(false);
+        menuChangeIcon.setContentDescription(getString(R.string.cd_change_app_icon));
+        android.graphics.drawable.GradientDrawable cBg =
+                new android.graphics.drawable.GradientDrawable();
+        cBg.setCornerRadius(itemRadius);
+        cBg.setColor(Color.TRANSPARENT);
+        menuChangeIcon.setBackground(cBg);
+        menuChangeIcon.setOnClickListener(v -> {
+            ReorderHost h = menuHost;
+            if (h != null) h.onMenuChangeIcon();
+        });
+
+        menuResetIcon = new TextView(this);
+        menuResetIcon.setText(R.string.menu_reset_icon);
+        menuResetIcon.setTextColor(Color.WHITE);
+        menuResetIcon.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 13);
+        menuResetIcon.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+        menuResetIcon.setGravity(Gravity.CENTER);
+        menuResetIcon.setPadding(dp(20), dp(11), dp(20), dp(11));
+        menuResetIcon.setClickable(true);
+        menuResetIcon.setFocusable(false);
+        menuResetIcon.setContentDescription(getString(R.string.cd_reset_app_icon));
+        android.graphics.drawable.GradientDrawable rBg =
+                new android.graphics.drawable.GradientDrawable();
+        rBg.setCornerRadius(itemRadius);
+        rBg.setColor(Color.TRANSPARENT);
+        menuResetIcon.setBackground(rBg);
+        menuResetIcon.setOnClickListener(v -> {
+            ReorderHost h = menuHost;
+            if (h != null) h.onMenuResetIcon();
+        });
+
         menuUninstall = new TextView(this);
         menuUninstall.setText(R.string.menu_uninstall);
         menuUninstall.setTextColor(0xFFFF6B6B);
@@ -2474,7 +2539,15 @@ public class LauncherActivity extends Activity {
         android.widget.LinearLayout.LayoutParams itemLp0 =
                 new android.widget.LinearLayout.LayoutParams(dp(140), WRAP);
         itemLp0.bottomMargin = dp(2);
+        android.widget.LinearLayout.LayoutParams itemLpChange =
+                new android.widget.LinearLayout.LayoutParams(dp(140), WRAP);
+        itemLpChange.bottomMargin = dp(2);
+        android.widget.LinearLayout.LayoutParams itemLpReset =
+                new android.widget.LinearLayout.LayoutParams(dp(140), WRAP);
+        itemLpReset.bottomMargin = dp(2);
         menuCol.addView(menuHide, itemLp0);
+        menuCol.addView(menuChangeIcon, itemLpChange);
+        menuCol.addView(menuResetIcon, itemLpReset);
         menuCol.addView(menuUninstall, itemLp);
         android.widget.LinearLayout.LayoutParams itemLp2 =
                 new android.widget.LinearLayout.LayoutParams(dp(140), WRAP);
@@ -2487,14 +2560,18 @@ public class LauncherActivity extends Activity {
     }
 
     void showContextMenu(View cell) {
-        if (menuOverlay == null || menuHide == null || menuUninstall == null || menuAppInfo == null || menuMove == null) return;
-        // TV-input tiles can't be uninstalled or have an App-info page — hide
-        // those two rows so the menu shows only Hide + Move. Set BEFORE the
-        // measure below so the overlay sizes to the shorter list. menuNavSel
-        // then skips the hidden rows during D-pad navigation.
+        if (menuOverlay == null || menuHide == null || menuChangeIcon == null
+                || menuResetIcon == null || menuUninstall == null
+                || menuAppInfo == null || menuMove == null) return;
+        // TV-input tiles have no package icon, uninstall target, or App-info
+        // page. A regular app always gets Change icon; Reset icon appears only
+        // while that app has a persistent override.
         ReorderHost host = menuHost;
         boolean inputMode = (host != null && host.menuAppIsInput());
+        menuHasCustomIcon = !inputMode && host != null && host.menuAppHasCustomIcon();
         int extraVis = inputMode ? View.GONE : View.VISIBLE;
+        menuChangeIcon.setVisibility(extraVis);
+        menuResetIcon.setVisibility(menuHasCustomIcon ? View.VISIBLE : View.GONE);
         menuUninstall.setVisibility(extraVis);
         menuAppInfo.setVisibility(extraVis);
         cell.getLocationOnScreen(menuCellLoc);
@@ -2612,27 +2689,27 @@ public class LauncherActivity extends Activity {
     }
 
     /** Context-menu rows in top→bottom visual order. {@link #menuNavSel} walks
-     *  these so UP/DOWN navigation and the input-mode row-skipping live in one
-     *  place instead of being duplicated (and drifting) across the two cell
-     *  key handlers. */
+     *  these so UP/DOWN navigation and conditional row visibility live in one
+     *  place instead of being duplicated across the two cell key handlers. */
     private static final int[] MENU_ROWS_FULL = {
-            RecyclingShelfView.MENU_HIDE, RecyclingShelfView.MENU_UNINSTALL,
+            RecyclingShelfView.MENU_HIDE, RecyclingShelfView.MENU_CHANGE_ICON,
+            RecyclingShelfView.MENU_UNINSTALL, RecyclingShelfView.MENU_APP_INFO,
+            RecyclingShelfView.MENU_MOVE };
+    private static final int[] MENU_ROWS_WITH_RESET = {
+            RecyclingShelfView.MENU_HIDE, RecyclingShelfView.MENU_CHANGE_ICON,
+            RecyclingShelfView.MENU_RESET_ICON, RecyclingShelfView.MENU_UNINSTALL,
             RecyclingShelfView.MENU_APP_INFO, RecyclingShelfView.MENU_MOVE };
-    /** Input tiles expose only Hide + Move (no Uninstall / App-info). */
+    /** Input tiles expose only Hide + Move. */
     private static final int[] MENU_ROWS_INPUT = {
             RecyclingShelfView.MENU_HIDE, RecyclingShelfView.MENU_MOVE };
 
-    /** Next menu selection when navigating from {@code cur} by {@code dir}
-     *  ({@code -1} = UP toward Hide, {@code +1} = DOWN toward Move), clamped
-     *  at the ends and skipping the Uninstall / App-info rows when the menu is
-     *  acting on a TV input. Input-mode is read LIVE from the active host (not
-     *  a cached flag) so navigation can never run against a stale mode — the
-     *  dragged item is fixed while the menu is open, so this is O(1) and
-     *  stable. For a normal app this reproduces the previous hard-coded chain
-     *  exactly (Hide ↔ Uninstall ↔ App info ↔ Move). */
+    /** Next visible menu selection, clamped at the first and last row. */
     private int menuNavSel(int cur, int dir) {
-        boolean input = (menuHost != null && menuHost.menuAppIsInput());
-        int[] order = input ? MENU_ROWS_INPUT : MENU_ROWS_FULL;
+        ReorderHost host = menuHost;
+        boolean input = host != null && host.menuAppIsInput();
+        boolean hasCustomIcon = !input && menuHasCustomIcon;
+        int[] order = input ? MENU_ROWS_INPUT
+                : (hasCustomIcon ? MENU_ROWS_WITH_RESET : MENU_ROWS_FULL);
         int idx = 0;
         for (int i = 0; i < order.length; i++) if (order[i] == cur) { idx = i; break; }
         idx = Math.max(0, Math.min(order.length - 1, idx + dir));
@@ -2641,24 +2718,25 @@ public class LauncherActivity extends Activity {
 
     void updateMenuHighlight() {
         ReorderHost h = menuHost; if (h == null) return;
-        if (menuHide == null || menuUninstall == null || menuAppInfo == null || menuMove == null) return;
+        if (menuHide == null || menuChangeIcon == null || menuResetIcon == null
+                || menuUninstall == null || menuAppInfo == null || menuMove == null) return;
         int sel = h.menuSelection();
         // Bright frosted-white pill for the selected item, mirroring the
         // toolbar buttons & keymap rows. The selected item's text inverts
-        // to dark for contrast; non-destructive items invert to near-black,
-        // Uninstall keeps its red identity but darkens to read on white.
+        // to dark for contrast; Uninstall keeps its red identity.
         final int hlWhite = 0xFFEFEFEF;
-        // Each item's background was constructed as a GradientDrawable with
-        // a fixed corner radius (see buildLayout) — we mutate the colour on
-        // those existing drawables so the rounded shape never changes.
-        setMenuItemBg(menuHide,      sel == RecyclingShelfView.MENU_HIDE      ? hlWhite : Color.TRANSPARENT);
-        setMenuItemBg(menuUninstall, sel == RecyclingShelfView.MENU_UNINSTALL ? hlWhite : Color.TRANSPARENT);
-        setMenuItemBg(menuAppInfo,   sel == RecyclingShelfView.MENU_APP_INFO  ? hlWhite : Color.TRANSPARENT);
-        setMenuItemBg(menuMove,      sel == RecyclingShelfView.MENU_MOVE      ? hlWhite : Color.TRANSPARENT);
-        menuHide     .setTextColor(sel == RecyclingShelfView.MENU_HIDE      ? 0xFF111114 : 0xCCFFFFFF);
-        menuUninstall.setTextColor(sel == RecyclingShelfView.MENU_UNINSTALL ? 0xFFC0202A : 0xCCFF6B6B);
-        menuAppInfo  .setTextColor(sel == RecyclingShelfView.MENU_APP_INFO  ? 0xFF111114 : 0xCCFFFFFF);
-        menuMove     .setTextColor(sel == RecyclingShelfView.MENU_MOVE      ? 0xFF111114 : 0xCCFFFFFF);
+        setMenuItemBg(menuHide,       sel == RecyclingShelfView.MENU_HIDE        ? hlWhite : Color.TRANSPARENT);
+        setMenuItemBg(menuChangeIcon, sel == RecyclingShelfView.MENU_CHANGE_ICON ? hlWhite : Color.TRANSPARENT);
+        setMenuItemBg(menuResetIcon,  sel == RecyclingShelfView.MENU_RESET_ICON  ? hlWhite : Color.TRANSPARENT);
+        setMenuItemBg(menuUninstall,  sel == RecyclingShelfView.MENU_UNINSTALL   ? hlWhite : Color.TRANSPARENT);
+        setMenuItemBg(menuAppInfo,    sel == RecyclingShelfView.MENU_APP_INFO    ? hlWhite : Color.TRANSPARENT);
+        setMenuItemBg(menuMove,       sel == RecyclingShelfView.MENU_MOVE        ? hlWhite : Color.TRANSPARENT);
+        menuHide      .setTextColor(sel == RecyclingShelfView.MENU_HIDE        ? 0xFF111114 : 0xCCFFFFFF);
+        menuChangeIcon.setTextColor(sel == RecyclingShelfView.MENU_CHANGE_ICON ? 0xFF111114 : 0xCCFFFFFF);
+        menuResetIcon .setTextColor(sel == RecyclingShelfView.MENU_RESET_ICON  ? 0xFF111114 : 0xCCFFFFFF);
+        menuUninstall .setTextColor(sel == RecyclingShelfView.MENU_UNINSTALL   ? 0xFFC0202A : 0xCCFF6B6B);
+        menuAppInfo   .setTextColor(sel == RecyclingShelfView.MENU_APP_INFO    ? 0xFF111114 : 0xCCFFFFFF);
+        menuMove      .setTextColor(sel == RecyclingShelfView.MENU_MOVE        ? 0xFF111114 : 0xCCFFFFFF);
     }
 
     /** Updates the colour of an item's existing rounded GradientDrawable
@@ -3113,17 +3191,17 @@ public class LauncherActivity extends Activity {
         // is simply dropped instead of briefly acting on stale data.
         int setAppsGen = 0;
 
-        // MENU_HIDE=3 (top), MENU_UNINSTALL=0, MENU_APP_INFO=1, MENU_MOVE=2 (bottom).
-        // Values are identifiers only — the menu's visual order (Hide, Uninstall,
-        // App Info, Move) is set by the order rows are added in ensureMenuOverlay
-        // and by the explicit UP/DOWN navigation chains, not by these ints.
-        private static final int MENU_UNINSTALL = 0;
-        private static final int MENU_APP_INFO  = 1;
-        private static final int MENU_MOVE      = 2;
-        // MENU_HIDE sits at the TOP of the context menu (above Uninstall). It
-        // hides the app from the shelf/drawer (it stays installed and remains
-        // available for remote-key shortcuts + the Manage-hidden-apps list).
-        private static final int MENU_HIDE      = 3;
+        // Values are identifiers only. ensureMenuOverlay and menuNavSel define
+        // the visible order: Hide, Change icon, optional Reset icon,
+        // Uninstall, App Info, Move.
+        private static final int MENU_UNINSTALL   = 0;
+        private static final int MENU_APP_INFO    = 1;
+        private static final int MENU_MOVE        = 2;
+        // MENU_HIDE sits at the TOP of the context menu (above icon actions
+        // and destructive/system actions).
+        private static final int MENU_HIDE        = 3;
+        private static final int MENU_CHANGE_ICON = 4;
+        private static final int MENU_RESET_ICON  = 5;
         int menuSelection = MENU_MOVE;
 
         RecyclingShelfView(Context ctx) {
@@ -3150,6 +3228,12 @@ public class LauncherActivity extends Activity {
             return dragIndex >= 0 && dragIndex < displayed.size()
                     && displayed.get(dragIndex).tvInputId != null;
         }
+        @Override public boolean menuAppHasCustomIcon() {
+            AppInfo app = (dragIndex >= 0 && dragIndex < displayed.size())
+                    ? displayed.get(dragIndex) : null;
+            CustomIconStore store = LauncherActivity.this.customIconStore;
+            return app != null && store != null && store.has(app.packageName);
+        }
         @Override public void onMenuHide() {
             if (!reorderMode) return;
             menuSelection = MENU_HIDE;
@@ -3169,6 +3253,22 @@ public class LauncherActivity extends Activity {
             menuSelection = MENU_APP_INFO;
             CellView cv = attached.get(dragIndex);
             if (cv != null) cv.triggerAppInfo(); else exitReorderMode(false);
+        }
+        @Override public void onMenuChangeIcon() {
+            if (!reorderMode) return;
+            menuSelection = MENU_CHANGE_ICON;
+            AppInfo app = (dragIndex >= 0 && dragIndex < displayed.size())
+                    ? displayed.get(dragIndex) : null;
+            exitReorderMode(false);
+            LauncherActivity.this.openCustomIconPicker(app);
+        }
+        @Override public void onMenuResetIcon() {
+            if (!reorderMode) return;
+            menuSelection = MENU_RESET_ICON;
+            AppInfo app = (dragIndex >= 0 && dragIndex < displayed.size())
+                    ? displayed.get(dragIndex) : null;
+            exitReorderMode(false);
+            LauncherActivity.this.resetCustomIcon(app);
         }
         @Override public void onMenuMove() {
             if (!reorderMode) return;
@@ -4120,10 +4220,12 @@ public class LauncherActivity extends Activity {
                                 menuSelection = menuNavSel(menuSelection, +1); updateMenuHighlight(); return true;
                             case KeyEvent.KEYCODE_DPAD_CENTER: case KeyEvent.KEYCODE_ENTER:
                             case KeyEvent.KEYCODE_BUTTON_A:
-                                if      (menuSelection == MENU_UNINSTALL) triggerUninstall();
-                                else if (menuSelection == MENU_APP_INFO)  triggerAppInfo();
-                                else if (menuSelection == MENU_HIDE)      RecyclingShelfView.this.onMenuHide();
-                                else                                      enterActiveMove();   // MOVE
+                                if      (menuSelection == MENU_UNINSTALL)   triggerUninstall();
+                                else if (menuSelection == MENU_APP_INFO)    triggerAppInfo();
+                                else if (menuSelection == MENU_HIDE)        RecyclingShelfView.this.onMenuHide();
+                                else if (menuSelection == MENU_CHANGE_ICON) RecyclingShelfView.this.onMenuChangeIcon();
+                                else if (menuSelection == MENU_RESET_ICON)  RecyclingShelfView.this.onMenuResetIcon();
+                                else                                        enterActiveMove();   // MOVE
                                 return true;
                             case KeyEvent.KEYCODE_BACK:
                                 exitReorderMode(false); return true;
@@ -4498,6 +4600,12 @@ public class LauncherActivity extends Activity {
             return dragIndex >= 0 && dragIndex < displayed.size()
                     && displayed.get(dragIndex).tvInputId != null;
         }
+        @Override public boolean menuAppHasCustomIcon() {
+            AppInfo app = (dragIndex >= 0 && dragIndex < displayed.size())
+                    ? displayed.get(dragIndex) : null;
+            CustomIconStore store = LauncherActivity.this.customIconStore;
+            return app != null && store != null && store.has(app.packageName);
+        }
         @Override public void onMenuHide() {
             if (!reorderMode) return;
             menuSelection = RecyclingShelfView.MENU_HIDE;
@@ -4512,6 +4620,24 @@ public class LauncherActivity extends Activity {
             if (!reorderMode) return;
             menuSelection = RecyclingShelfView.MENU_APP_INFO;
             triggerAppInfo();
+        }
+        @Override public void onMenuChangeIcon() {
+            if (!reorderMode) return;
+            menuSelection = RecyclingShelfView.MENU_CHANGE_ICON;
+            int idx = dragIndex;
+            AppInfo app = (idx >= 0 && idx < displayed.size()) ? displayed.get(idx) : null;
+            exitReorderMode(false);
+            LauncherActivity.this.pendingDrawerFocusIdx = Math.max(0, idx);
+            LauncherActivity.this.keepDrawerOpenOnResume =
+                    LauncherActivity.this.openCustomIconPicker(app);
+        }
+        @Override public void onMenuResetIcon() {
+            if (!reorderMode) return;
+            menuSelection = RecyclingShelfView.MENU_RESET_ICON;
+            AppInfo app = (dragIndex >= 0 && dragIndex < displayed.size())
+                    ? displayed.get(dragIndex) : null;
+            exitReorderMode(false);
+            LauncherActivity.this.resetCustomIcon(app);
         }
         @Override public void onMenuMove() {
             if (!reorderMode) return;
@@ -5297,10 +5423,12 @@ public class LauncherActivity extends Activity {
                             case KeyEvent.KEYCODE_DPAD_CENTER:
                             case KeyEvent.KEYCODE_ENTER:
                             case KeyEvent.KEYCODE_BUTTON_A:
-                                if      (menuSelection == RecyclingShelfView.MENU_UNINSTALL) triggerUninstall();
-                                else if (menuSelection == RecyclingShelfView.MENU_APP_INFO)  triggerAppInfo();
-                                else if (menuSelection == RecyclingShelfView.MENU_HIDE)      triggerHide();
-                                else                                                          enterActiveMove();
+                                if      (menuSelection == RecyclingShelfView.MENU_UNINSTALL)   triggerUninstall();
+                                else if (menuSelection == RecyclingShelfView.MENU_APP_INFO)    triggerAppInfo();
+                                else if (menuSelection == RecyclingShelfView.MENU_HIDE)        triggerHide();
+                                else if (menuSelection == RecyclingShelfView.MENU_CHANGE_ICON) AppDrawer.this.onMenuChangeIcon();
+                                else if (menuSelection == RecyclingShelfView.MENU_RESET_ICON)  AppDrawer.this.onMenuResetIcon();
+                                else                                                            enterActiveMove();
                                 return true;
                             case KeyEvent.KEYCODE_BACK:
                                 exitReorderMode(false); return true;
@@ -8912,55 +9040,56 @@ public class LauncherActivity extends Activity {
         return true;
     }
 
+    private long customIconSourceVersion(String packageName) {
+        CustomIconStore store = customIconStore;
+        return store != null ? store.sourceVersion(packageName) : 0L;
+    }
+
     private void preWarmIcon(AppInfo app) {
         String key = app.packageName;
         if (iconCache.get(key) != null || iconInflight.containsKey(key)) return;
-        // Register an empty waiter list — visible cells self-register via loadIconAsync/bind().
-        // The redundant attached-cell scan was removed: it caused double setIconBitmap delivery
-        // when a cell was already in the waiters list AND matched the attached scan.
+        final long sourceVersion = customIconSourceVersion(key);
+        // The waiter-list identity is also the load token. A custom-icon
+        // change removes this list before scheduling a replacement, so an old
+        // completion can never remove or deliver through the newer load.
         List<IconTarget> waiters = new ArrayList<>(2);
         iconInflight.put(key, waiters);
         try {
             iconExecutor.execute(() -> {
                 if (destroyed) return;
                 Bitmap bmp = null;
+                boolean sourceCurrent = false;
                 try {
-                    // Disk-first, then PM. See {@link #loadIconBlocking}
-                    // for the full pipeline. This consolidated helper
-                    // replaced the v1.4.0 initial draft's separate
-                    // {@code resolveIconDrawable + IconRenderer.process +
-                    // writeAsync} sequence so the same disk-fast-path
-                    // runs for every executor-thread icon load
-                    // (preWarmIcon and
-                    // loadIconAsync alike).
                     bmp = loadIconBlocking(app);
-                    if (bmp != null) iconCache.put(key, bmp);
+                    sourceCurrent = customIconSourceVersion(key) == sourceVersion;
+                    if (sourceCurrent && bmp != null) iconCache.put(key, bmp);
                 } catch (OutOfMemoryError | RuntimeException ignored) {}
                 if (destroyed) return;
                 final Bitmap fb = bmp;
+                final boolean publish = sourceCurrent;
                 runOnUiThread(() -> {
                     if (destroyed) return;
-                    List<IconTarget> pending = iconInflight.remove(key);
-                    if (pending != null && fb != null) {
+                    List<IconTarget> pending = iconInflight.get(key);
+                    if (pending != waiters) {
+                        if (!publish && fb != null && !fb.isRecycled()) fb.recycle();
+                        return;
+                    }
+                    iconInflight.remove(key);
+                    if (!publish) {
+                        if (fb != null && !fb.isRecycled()) fb.recycle();
+                        preWarmIcon(app);
+                        return;
+                    }
+                    if (fb != null) {
                         for (int i = 0, n = pending.size(); i < n; i++) {
                             IconTarget cell = pending.get(i);
-                            // Guard: only deliver to a cell that is still attached
-                            // and bound to this package. A cell that's been recycled
-                            // back to the pool has visibility GONE and a null
-                            // boundApp — delivering would invalidate a hidden view
-                            // for nothing.
                             if (cell.iconTargetVisible() && key.equals(cell.iconTargetPackage()))
                                 cell.setIconBitmap(fb);
                         }
+                        // Live-update any open chip strips / slot rows showing
+                        // this package after the memory cache is current.
+                        onIconLoaded(key, fb);
                     }
-                    // Live-update any open chip strips / slot rows showing
-                    // this package — the bitmap may have been requested
-                    // for the shelf but the user is currently inside the
-                    // hide manager / keymap picker. Runs even when the
-                    // shelf-delivery path short-circuited above (pending
-                    // null after onTrimMemory clear) so the chip strip
-                    // still picks up the new cache entry.
-                    if (fb != null) onIconLoaded(key, fb);
                 });
             });
         } catch (java.util.concurrent.RejectedExecutionException e) { iconInflight.remove(key); }
@@ -9007,6 +9136,18 @@ public class LauncherActivity extends Activity {
         // {@link IconRenderer#process} directly with the captured size
         // so every leg of this method shares one resolution.
         final int iconPx = dp(ICON_DP);
+        CustomIconStore customStore = customIconStore;
+        if (customStore != null) {
+            Bitmap custom = customStore.read(app.packageName);
+            if (custom != null) {
+                try {
+                    Drawable drawable = new BitmapDrawable(getResources(), custom);
+                    return IconRenderer.process(drawable, iconPx);
+                } finally {
+                    if (!custom.isRecycled()) custom.recycle();
+                }
+            }
+        }
         if (dc != null) {
             Bitmap fromDisk = dc.tryRead(app.packageName, iconPx);
             if (fromDisk != null) return fromDisk;
@@ -9137,6 +9278,18 @@ public class LauncherActivity extends Activity {
         if (app.tvInputId != null) {
             return IconRenderer.generateInputTile(w, h, corner, app.label, density);
         }
+        CustomIconStore customStore = customIconStore;
+        if (customStore != null) {
+            Bitmap custom = customStore.read(app.packageName);
+            if (custom != null) {
+                try {
+                    Drawable drawable = new BitmapDrawable(getResources(), custom);
+                    return IconRenderer.generateBannerTile(drawable, w, h, corner);
+                } finally {
+                    if (!custom.isRecycled()) custom.recycle();
+                }
+            }
+        }
         Drawable banner = resolveBannerDrawable(app);
         if (banner != null) {
             Bitmap b = IconRenderer.processBannerArt(banner, w, h, corner);
@@ -9150,20 +9303,36 @@ public class LauncherActivity extends Activity {
         if (bannerCache == null) return;
         String key = app.packageName;
         if (bannerCache.get(key) != null || bannerInflight.containsKey(key)) return;
+        final long sourceVersion = customIconSourceVersion(key);
         List<IconTarget> waiters = new ArrayList<>(2);
         bannerInflight.put(key, waiters);
         try {
             iconExecutor.execute(() -> {
                 if (destroyed) return;
                 Bitmap bmp = null;
-                try { bmp = loadBannerBlocking(app); if (bmp != null) bannerCache.put(key, bmp); }
-                catch (OutOfMemoryError | RuntimeException ignored) {}
+                boolean sourceCurrent = false;
+                try {
+                    bmp = loadBannerBlocking(app);
+                    sourceCurrent = customIconSourceVersion(key) == sourceVersion;
+                    if (sourceCurrent && bmp != null) bannerCache.put(key, bmp);
+                } catch (OutOfMemoryError | RuntimeException ignored) {}
                 if (destroyed) return;
                 final Bitmap fb = bmp;
+                final boolean publish = sourceCurrent;
                 runOnUiThread(() -> {
                     if (destroyed) return;
-                    List<IconTarget> pending = bannerInflight.remove(key);
-                    if (pending != null && fb != null) {
+                    List<IconTarget> pending = bannerInflight.get(key);
+                    if (pending != waiters) {
+                        if (!publish && fb != null && !fb.isRecycled()) fb.recycle();
+                        return;
+                    }
+                    bannerInflight.remove(key);
+                    if (!publish) {
+                        if (fb != null && !fb.isRecycled()) fb.recycle();
+                        preWarmBanner(app);
+                        return;
+                    }
+                    if (fb != null) {
                         for (int i = 0, n = pending.size(); i < n; i++) {
                             IconTarget cell = pending.get(i);
                             if (cell.iconTargetVisible() && key.equals(cell.iconTargetPackage()))
@@ -9185,6 +9354,7 @@ public class LauncherActivity extends Activity {
             if (!waiters.contains(target)) waiters.add(target);
             return;
         }
+        final long sourceVersion = customIconSourceVersion(key);
         waiters = new ArrayList<>(2); waiters.add(target);
         bannerInflight.put(key, waiters);
         final List<IconTarget> fw = waiters;
@@ -9192,13 +9362,31 @@ public class LauncherActivity extends Activity {
             iconExecutor.execute(() -> {
                 if (destroyed) return;
                 Bitmap bmp = null;
-                try { bmp = loadBannerBlocking(app); if (bmp != null) bannerCache.put(key, bmp); }
-                catch (OutOfMemoryError | RuntimeException ignored) {}
+                boolean sourceCurrent = false;
+                try {
+                    bmp = loadBannerBlocking(app);
+                    sourceCurrent = customIconSourceVersion(key) == sourceVersion;
+                    if (sourceCurrent && bmp != null) bannerCache.put(key, bmp);
+                } catch (OutOfMemoryError | RuntimeException ignored) {}
                 if (destroyed) return;
                 final Bitmap fb = bmp;
+                final boolean publish = sourceCurrent;
                 runOnUiThread(() -> {
                     if (destroyed) return;
+                    List<IconTarget> pending = bannerInflight.get(key);
+                    if (pending != fw) {
+                        if (!publish && fb != null && !fb.isRecycled()) fb.recycle();
+                        return;
+                    }
                     bannerInflight.remove(key);
+                    if (!publish) {
+                        if (fb != null && !fb.isRecycled()) fb.recycle();
+                        for (IconTarget cell : fw) {
+                            if (cell.iconTargetVisible() && key.equals(cell.iconTargetPackage()))
+                                loadBannerAsync(app, cell);
+                        }
+                        return;
+                    }
                     if (fb == null) return;
                     for (IconTarget cell : fw) {
                         if (cell.iconTargetVisible() && key.equals(cell.iconTargetPackage()))
@@ -9292,6 +9480,131 @@ public class LauncherActivity extends Activity {
     }
 
     private void stopClock() { clockRunning = false; uiHandler.removeCallbacks(clockTick); }
+
+    // ── Per-app custom icons (SAF picker, private normalized source) ──────
+
+    /** Open the system image picker for a real app. Returns whether it launched. */
+    @SuppressWarnings("deprecation")
+    private boolean openCustomIconPicker(AppInfo app) {
+        if (app == null || app.tvInputId != null) return false;
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.setType("image/*");
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        pendingCustomIconPackage = app.packageName;
+        pendingCustomIconLabel = app.label;
+        try {
+            startActivityForResult(intent, REQ_PICK_ICON);
+            return true;
+        } catch (Exception ignored) {
+            pendingCustomIconPackage = null;
+            pendingCustomIconLabel = null;
+            showToast(getString(R.string.toast_no_file_picker));
+            return false;
+        }
+    }
+
+    /** Decode and copy a selected icon on the existing icon worker pool. */
+    private void saveCustomIcon(Uri uri, String packageName, String label) {
+        CustomIconStore store = customIconStore;
+        ThreadPoolExecutor executor = iconExecutor;
+        if (store == null || executor == null || uri == null || packageName == null) {
+            showToast(getString(R.string.toast_custom_icon_failed));
+            return;
+        }
+        try {
+            executor.execute(() -> {
+                boolean saved = store.save(getContentResolver(), uri, packageName);
+                if (destroyed) return;
+                runOnUiThread(() -> {
+                    if (destroyed) return;
+                    AppInfo current = findAppByPackage(packageName);
+                    if (saved && isPackageInstalled(packageName)) {
+                        if (current != null) refreshAppArtwork(current);
+                        else loadApps();
+                        showToast(getString(R.string.toast_custom_icon_set,
+                                label != null ? label : packageName));
+                    } else {
+                        // The app may have been removed while its picker was open.
+                        // Do not retain an unreachable custom image in that case.
+                        if (saved) store.delete(packageName);
+                        showToast(getString(R.string.toast_custom_icon_failed));
+                    }
+                });
+            });
+        } catch (java.util.concurrent.RejectedExecutionException ignored) {
+            showToast(getString(R.string.toast_custom_icon_failed));
+        }
+    }
+
+    /** Remove an override and repaint the selected app with package artwork. */
+    private void resetCustomIcon(AppInfo app) {
+        if (app == null || app.tvInputId != null) return;
+        CustomIconStore store = customIconStore;
+        ThreadPoolExecutor executor = iconExecutor;
+        if (store == null || executor == null) {
+            showToast(getString(R.string.toast_custom_icon_failed));
+            return;
+        }
+        try {
+            executor.execute(() -> {
+                boolean deleted = store.delete(app.packageName);
+                if (destroyed) return;
+                runOnUiThread(() -> {
+                    if (destroyed) return;
+                    AppInfo current = findAppByPackage(app.packageName);
+                    if (deleted) {
+                        if (isPackageInstalled(app.packageName)) {
+                            if (current != null) refreshAppArtwork(current);
+                            else loadApps();
+                        }
+                        showToast(getString(R.string.toast_custom_icon_reset));
+                    } else {
+                        showToast(getString(R.string.toast_custom_icon_failed));
+                    }
+                });
+            });
+        } catch (java.util.concurrent.RejectedExecutionException ignored) {
+            showToast(getString(R.string.toast_custom_icon_failed));
+        }
+    }
+
+    /** Evict both artwork shapes and repaint only cells bound to this package. */
+    private void refreshAppArtwork(AppInfo app) {
+        if (app == null) return;
+        String packageName = app.packageName;
+        if (iconCache != null) iconCache.remove(packageName);
+        if (bannerCache != null) bannerCache.remove(packageName);
+        iconInflight.remove(packageName);
+        bannerInflight.remove(packageName);
+        RecyclingShelfView currentShelf = shelf;
+        if (currentShelf != null) currentShelf.rebindAll();
+        AppDrawer currentDrawer = drawer;
+        if (currentDrawer != null) currentDrawer.rebindAttached();
+        preWarmIcon(app);
+    }
+
+    /** PackageManager is authoritative when the in-memory app list is rebuilding. */
+    @SuppressWarnings("deprecation")
+    private boolean isPackageInstalled(String packageName) {
+        if (packageName == null || pm == null) return false;
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                pm.getApplicationInfo(packageName,
+                        PackageManager.ApplicationInfoFlags.of(
+                                PackageManager.MATCH_DISABLED_COMPONENTS));
+            } else {
+                pm.getApplicationInfo(packageName, PackageManager.MATCH_DISABLED_COMPONENTS);
+            }
+            return true;
+        } catch (PackageManager.NameNotFoundException ignored) {
+            return false;
+        } catch (RuntimeException ignored) {
+            // A binder or ROM failure is not proof of uninstall. Retain user
+            // data and let the next app-list reconcile settle visibility.
+            return true;
+        }
+    }
 
     // Wallpaper subsystem — the entire bitmap-loading / cross-fade / decode
     // state machine lives in {@link WallpaperController}. The controller is
@@ -10199,6 +10512,17 @@ public class LauncherActivity extends Activity {
     @Override @SuppressWarnings("deprecation")
     protected void onActivityResult(int req, int res, Intent data) {
         super.onActivityResult(req, res, data);
+        if (req == REQ_PICK_ICON) {
+            String packageName = pendingCustomIconPackage;
+            String label = pendingCustomIconLabel;
+            pendingCustomIconPackage = null;
+            pendingCustomIconLabel = null;
+            if (res == RESULT_OK && data != null && packageName != null) {
+                Uri uri = data.getData();
+                if (uri != null) saveCustomIcon(uri, packageName, label);
+            }
+            return;
+        }
         if (req == REQ_BACKUP_EXPORT && res == RESULT_OK && data != null) {
             Uri uri = data.getData();
             if (uri != null) writeBackup(uri);
@@ -10353,6 +10677,9 @@ public class LauncherActivity extends Activity {
         ActivityManager am = (ActivityManager) getSystemService(ACTIVITY_SERVICE);
         int memMb   = (am != null) ? am.getMemoryClass() : 64;
         int cacheMb = Math.min(memMb / 8, 16);
+        // User-selected icon sources. Construct before either rendering cache
+        // so every worker sees custom artwork from its first lookup.
+        customIconStore = new CustomIconStore(this);
         // The on-disk icon cache. Constructed BEFORE iconCache so the
         // icon-load executor tasks can read from / write to it. Owns
         // its own write executor; shut down in onDestroy().
