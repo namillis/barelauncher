@@ -14,6 +14,7 @@ import java.util.Map;
  *   key_map\t183=com.a,184=com.b
  *   hidden_apps\tcom.x,com.y
  *   clock_mode\t0
+ *   custom_names\t&lt;URL-safe encoded map&gt;
  * </pre>
  * Line 1 is a magic + format-version header; every following line is a
  * {@code key\tvalue} pair. The wallpaper is deliberately NOT included — it is
@@ -29,10 +30,10 @@ import java.util.Map;
  *       file (no half-applied restore).</li>
  *   <li><b>Forward-compatible:</b> unknown keys are ignored on parse, and a
  *       newer major version is rejected rather than mis-read.</li>
- *   <li><b>Robust values:</b> the values we store (comma-separated package
- *       lists, {@code kc=pkg} maps, integers) never contain a TAB or newline;
+ *   <li><b>Robust values:</b> package lists, key maps, integers, and the
+ *       URL-safe custom-name map never contain a TAB or newline;
  *       {@link #serialize} defensively strips any anyway so the line format
- *       can never be corrupted.</li>
+ *       cannot be corrupted.</li>
  *   <li><b>Android-free:</b> exercised by fast JVM unit tests; the activity
  *       only does the SAF file I/O around it.</li>
  * </ul>
@@ -49,20 +50,22 @@ final class SettingsBackup {
     static final String K_APP_ORDER  = "app_order";
     static final String K_HOME_COUNT = "home_count";
     static final String K_KEY_MAP    = "key_map";
-    static final String K_HIDDEN     = "hidden_apps";
-    static final String K_CLOCK_MODE = "clock_mode";
+    static final String K_HIDDEN      = "hidden_apps";
+    static final String K_CLOCK_MODE  = "clock_mode";
+    static final String K_CUSTOM_NAMES = "custom_names";
 
     /** Build the backup file text. {@code null} string values are written as
      *  empty so every key is always present in a well-formed file. */
     static String serialize(String appOrder, int homeCount, String keyMap,
-                            String hiddenApps, int clockMode) {
+                            String hiddenApps, int clockMode, String customNames) {
         StringBuilder sb = new StringBuilder(256);
         sb.append(MAGIC).append('\t').append(VERSION).append('\n');
-        line(sb, K_APP_ORDER,  appOrder);
-        line(sb, K_HOME_COUNT, Integer.toString(homeCount));
-        line(sb, K_KEY_MAP,    keyMap);
-        line(sb, K_HIDDEN,     hiddenApps);
-        line(sb, K_CLOCK_MODE, Integer.toString(clockMode));
+        line(sb, K_APP_ORDER,   appOrder);
+        line(sb, K_HOME_COUNT,  Integer.toString(homeCount));
+        line(sb, K_KEY_MAP,     keyMap);
+        line(sb, K_HIDDEN,      hiddenApps);
+        line(sb, K_CLOCK_MODE,  Integer.toString(clockMode));
+        line(sb, K_CUSTOM_NAMES, customNames);
         return sb.toString();
     }
 

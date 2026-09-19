@@ -6,6 +6,7 @@ import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
 import android.graphics.Paint;
+import android.graphics.Rect;
 import android.graphics.RectF;
 import android.net.Uri;
 
@@ -15,6 +16,9 @@ import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -22,10 +26,13 @@ import java.util.concurrent.atomic.AtomicLong;
  * Persistent per-package custom launcher icons.
  *
  * <p>A selected image is decoded off the UI thread, bounded to
- * {@link #MAX_SOURCE_PX}, fitted into a transparent square without stretching,
- * and written atomically as WebP under the launcher's private files directory.
- * The source image can therefore move or disappear after selection without
- * breaking the override, and no broad storage permission is required.
+ * {@link #MAX_SOURCE_PX}, and normalized without stretching. Full-bleed
+ * artwork is center-cropped to a square; PNG-style artwork has excess
+ * transparent margins trimmed before it is fitted into the square. The
+ * result is written atomically as WebP under the launcher's private files
+ * directory. The source image can therefore move or disappear after
+ * selection without breaking the override, and no broad storage permission
+ * is required.
  *
  * <p>The in-memory source version prevents an icon decode that started before a
  * change from publishing stale artwork after the new file has been committed.
@@ -36,6 +43,8 @@ final class CustomIconStore {
 
     static final int MAX_SOURCE_PX = 512;
 
+    private static final int VISIBLE_ALPHA_THRESHOLD = 16;
+    private static final float TRANSPARENT_ICON_PADDING_FRACTION = 0.04f;
     private static final String DIR_NAME = "custom-icons";
     private static final String EXT = ".webp";
     private static final String TMP_EXT = ".webp.tmp";
@@ -117,7 +126,7 @@ final class CustomIconStore {
                 return false;
             }
 
-            normalized = fitIntoSquare(decoded, MAX_SOURCE_PX);
+            normalized = normalizeForDisplay(decoded, MAX_SOURCE_PX);
             if (normalized == null) return false;
 
             if (!dir.exists() && !dir.mkdirs()) return false;
@@ -167,9 +176,9 @@ final class CustomIconStore {
 
     /**
      * Largest power-of-two decode sample that leaves at least one source axis
-     * at or above {@code targetMax}. The final square-fit step performs the
-     * high-quality filtered downscale; this first pass prevents a 4K/8K image
-     * from becoming a large transient ARGB allocation.
+     * at or above {@code targetMax}. The final normalization step performs
+     * the high-quality filtered crop/downscale; this first pass prevents a
+     * 4K/8K image from becoming a large transient ARGB allocation.
      */
     static int computeSampleSize(int sourceWidth, int sourceHeight, int targetMax) {
         if (sourceWidth <= 0 || sourceHeight <= 0 || targetMax <= 0) return 1;
@@ -196,26 +205,128 @@ final class CustomIconStore {
         return true;
     }
 
-    private static Bitmap fitIntoSquare(Bitmap source, int maxSide) {
+    /**
+     * Normalize user-selected artwork without stretching it.
+     *
+     * <p>Opaque/full-bleed images use center-crop so landscape and portrait
+     * files fill the square instead of acquiring transparent letterbox bars.
+     * Images with a transparent outer margin are treated as logo artwork:
+     * the visible bounds are trimmed, then fitted with a small breathing room
+     * so the logo is enlarged without cutting it off.
+     *
+     * <p>The input remains caller-owned. The method returns it unchanged only
+     * when it is already a full-bleed square no larger than {@code maxSide}.
+     */
+    static Bitmap normalizeForDisplay(Bitmap source, int maxSide) {
+        if (source == null || maxSide <= 0) return null;
         int sourceWidth = source.getWidth();
         int sourceHeight = source.getHeight();
-        if (sourceWidth <= 0 || sourceHeight <= 0 || maxSide <= 0) return null;
-        int side = Math.min(maxSide, Math.max(sourceWidth, sourceHeight));
-        Bitmap output = Bitmap.createBitmap(side, side, Bitmap.Config.ARGB_8888);
-        float scale = Math.min((float) side / sourceWidth, (float) side / sourceHeight);
-        float width = sourceWidth * scale;
-        float height = sourceHeight * scale;
-        float left = (side - width) / 2f;
-        float top = (side - height) / 2f;
-        Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
-        new Canvas(output).drawBitmap(
-                source, null, new RectF(left, top, left + width, top + height), paint);
+        if (sourceWidth <= 0 || sourceHeight <= 0) return null;
+
+        Rect visible = findVisibleBounds(source);
+        if (visible == null || visible.isEmpty()) return null;
+        boolean hasTransparentMargin = visible.left > 0 || visible.top > 0
+                || visible.right < sourceWidth || visible.bottom < sourceHeight;
+        Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG
+                | Paint.DITHER_FLAG);
+
+        if (!hasTransparentMargin) {
+            int[] crop = centerCropBounds(sourceWidth, sourceHeight);
+            if (crop == null) return null;
+            int cropSide = crop[2] - crop[0];
+            int outputSide = Math.min(maxSide, cropSide);
+            if (sourceWidth == sourceHeight && sourceWidth == outputSide) return source;
+            Bitmap output = Bitmap.createBitmap(
+                    outputSide, outputSide, Bitmap.Config.ARGB_8888);
+            new Canvas(output).drawBitmap(source,
+                    new Rect(crop[0], crop[1], crop[2], crop[3]),
+                    new RectF(0, 0, outputSide, outputSide), paint);
+            return output;
+        }
+
+        int contentWidth = visible.width();
+        int contentHeight = visible.height();
+        int contentMax = Math.max(contentWidth, contentHeight);
+        float usableFraction = 1f - 2f * TRANSPARENT_ICON_PADDING_FRACTION;
+        int outputSide = Math.min(maxSide,
+                Math.max(1, (int) Math.ceil(contentMax / usableFraction)));
+        float padding = outputSide * TRANSPARENT_ICON_PADDING_FRACTION;
+        float available = Math.max(1f, outputSide - 2f * padding);
+        float scale = Math.min(available / contentWidth, available / contentHeight);
+        float width = contentWidth * scale;
+        float height = contentHeight * scale;
+        float left = (outputSide - width) / 2f;
+        float top = (outputSide - height) / 2f;
+
+        Bitmap output = Bitmap.createBitmap(
+                outputSide, outputSide, Bitmap.Config.ARGB_8888);
+        new Canvas(output).drawBitmap(source, visible,
+                new RectF(left, top, left + width, top + height), paint);
         return output;
     }
 
-    private File fileFor(String packageName, String suffix) {
-        if (!isSafePackageName(packageName)) return null;
-        return new File(dir, packageName + suffix);
+    /** Center square within a source image, returned as left/top/right/bottom. */
+    static int[] centerCropBounds(int sourceWidth, int sourceHeight) {
+        if (sourceWidth <= 0 || sourceHeight <= 0) return null;
+        int side = Math.min(sourceWidth, sourceHeight);
+        int left = (sourceWidth - side) / 2;
+        int top = (sourceHeight - side) / 2;
+        return new int[] {left, top, left + side, top + side};
+    }
+
+    /** Tight bounds of pixels with meaningful alpha, or null when fully transparent. */
+    private static Rect findVisibleBounds(Bitmap source) {
+        int width = source.getWidth();
+        int height = source.getHeight();
+        if (!source.hasAlpha()) return new Rect(0, 0, width, height);
+
+        int left = width;
+        int top = height;
+        int right = -1;
+        int bottom = -1;
+        int[] row = new int[width];
+        for (int y = 0; y < height; y++) {
+            source.getPixels(row, 0, width, 0, y, width, 1);
+            for (int x = 0; x < width; x++) {
+                if ((row[x] >>> 24) < VISIBLE_ALPHA_THRESHOLD) continue;
+                if (x < left) left = x;
+                if (x > right) right = x;
+                if (y < top) top = y;
+                bottom = y;
+            }
+        }
+        return right >= left ? new Rect(left, top, right + 1, bottom + 1) : null;
+    }
+
+    /**
+     * Stable flat filename stem for an app package or synthetic TV-input identity.
+     * Real package names retain their existing filenames. TV Input Framework IDs
+     * can contain slashes and component names, so they use a fixed-size SHA-256
+     * stem rather than weakening path validation or risking filename collisions.
+     */
+    static String fileStemForIdentity(String identity) {
+        if (isSafePackageName(identity)) return identity;
+        if (!AppInfo.isTvInputIdentity(identity)) return null;
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256")
+                    .digest(identity.substring(AppInfo.TV_INPUT_PREFIX.length())
+                            .getBytes(StandardCharsets.UTF_8));
+            StringBuilder stem = new StringBuilder("@tvinput_");
+            for (byte value : digest) {
+                int b = value & 0xff;
+                if (b < 0x10) stem.append('0');
+                stem.append(Integer.toHexString(b));
+            }
+            return stem.toString();
+        } catch (NoSuchAlgorithmException impossible) {
+            return null; // SHA-256 is mandatory on every supported Android runtime.
+        }
+    }
+
+    private File fileFor(String identity, String suffix) {
+        String stem = fileStemForIdentity(identity);
+        if (stem == null) return null;
+        return new File(dir, stem + suffix);
     }
 
     private void bumpVersion(String packageName) {

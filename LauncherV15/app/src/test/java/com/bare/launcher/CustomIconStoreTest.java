@@ -1,7 +1,9 @@
 package com.bare.launcher;
 
+import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
@@ -32,6 +34,54 @@ public class CustomIconStoreTest {
     @Test public void computeSampleSize_pathologicalInput_terminatesAtCap() {
         assertEquals(0x4000,
                 CustomIconStore.computeSampleSize(Integer.MAX_VALUE, Integer.MAX_VALUE, 1));
+    }
+
+    @Test public void centerCropBounds_landscape_cropsSides() {
+        assertArrayEquals(new int[] {350, 0, 1250, 900},
+                CustomIconStore.centerCropBounds(1600, 900));
+    }
+
+    @Test public void centerCropBounds_portrait_cropsTopAndBottom() {
+        assertArrayEquals(new int[] {0, 350, 900, 1250},
+                CustomIconStore.centerCropBounds(900, 1600));
+    }
+
+    @Test public void centerCropBounds_square_preservesWholeImage() {
+        assertArrayEquals(new int[] {0, 0, 512, 512},
+                CustomIconStore.centerCropBounds(512, 512));
+    }
+
+    @Test public void centerCropBounds_invalidDimensions_returnsNull() {
+        assertNull(CustomIconStore.centerCropBounds(0, 512));
+        assertNull(CustomIconStore.centerCropBounds(512, 0));
+    }
+
+    @Test public void fileStemForIdentity_realPackage_preservesExistingFilename() {
+        assertEquals("com.example.player",
+                CustomIconStore.fileStemForIdentity("com.example.player"));
+    }
+
+    @Test public void fileStemForIdentity_tvInput_isStableFlatAndSafe() {
+        String identity = "tvinput://com.oem/.HdmiInputService/HW5";
+        String first = CustomIconStore.fileStemForIdentity(identity);
+        String second = CustomIconStore.fileStemForIdentity(identity);
+
+        assertEquals(first, second);
+        assertTrue(first.startsWith("@tvinput_"));
+        assertFalse(first.contains("/"));
+        assertFalse(first.contains(":"));
+    }
+
+    @Test public void fileStemForIdentity_distinctInputs_doNotCollide() {
+        String hdmiOne = CustomIconStore.fileStemForIdentity("tvinput://oem/HW1");
+        String hdmiTwo = CustomIconStore.fileStemForIdentity("tvinput://oem/HW2");
+
+        assertFalse(hdmiOne.equals(hdmiTwo));
+    }
+
+    @Test public void fileStemForIdentity_invalidSyntheticIdentity_returnsNull() {
+        assertNull(CustomIconStore.fileStemForIdentity("tvinput://"));
+        assertNull(CustomIconStore.fileStemForIdentity("../outside"));
     }
 
     @Test public void isSafePackageName_acceptsAndroidIdentifiers() {

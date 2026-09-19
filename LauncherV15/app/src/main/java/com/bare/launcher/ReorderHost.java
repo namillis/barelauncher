@@ -2,7 +2,8 @@ package com.bare.launcher;
 
 /**
  * The surface that currently owns the shared reorder context menu (the
- * "Hide / Change icon / App Info / Uninstall / Move" plate). Either the bottom home shelf
+ * "Hide / Change icon / Reset icon / Rename / App Info / Uninstall / Move"
+ * plate). Either the bottom home shelf
  * ({@code RecyclingShelfView}) or the pull-down app drawer
  * ({@code AppDrawer}) can be the active reorder host at any one time — never
  * both, since the drawer is only reorder-able while it is open (covering the
@@ -17,9 +18,8 @@ package com.bare.launcher;
  */
 interface ReorderHost {
 
-    /** Current menu cursor — one of {@code MENU_HIDE} / {@code MENU_UNINSTALL}
-     *  / {@code MENU_APP_INFO} / {@code MENU_MOVE}. Read by the highlight
-     *  painter. */
+    /** Current menu cursor — one of Hide, Change icon, Reset icon, Rename,
+     *  Uninstall, App info, or Move. Read by the highlight painter. */
     int menuSelection();
 
     /** The user activated the Hide row (hides the app from the shelf/drawer;
@@ -35,18 +35,20 @@ interface ReorderHost {
     /** The user activated Change icon and should be shown the local image picker. */
     void onMenuChangeIcon();
 
-    /** The user activated Reset icon and should return to the app-provided artwork. */
+    /** The user activated Reset icon and should return to the default artwork. */
     void onMenuResetIcon();
+
+    /** The user activated Rename and should be shown the local-name dialog. */
+    void onMenuRename();
 
     /** The user activated the Move row (confirm reorder). */
     void onMenuMove();
 
-    /** Whether the selected app currently has a persistent custom icon. */
+    /** Whether the selected app or input currently has persistent custom artwork. */
     boolean menuAppHasCustomIcon();
 
-    /** {@code true} when the app the menu is currently acting on is a TV
-     *  input (HDMI/AV/…). The activity uses this to suppress the Uninstall
-     *  and App-info rows — an input is not an installed package — while
-     *  keeping Move and Hide. */
+    /** {@code true} when the selected entry is a TV input (HDMI/AV/…).
+     *  The activity suppresses only Uninstall and App info; local icon,
+     *  rename, Move, and Hide actions remain available. */
     boolean menuAppIsInput();
 }
