@@ -7,7 +7,6 @@ import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
 import android.graphics.Paint;
 import android.graphics.Rect;
-import android.graphics.RectF;
 import android.net.Uri;
 
 import java.io.BufferedOutputStream;
@@ -26,13 +25,10 @@ import java.util.concurrent.atomic.AtomicLong;
  * Persistent per-package custom launcher icons.
  *
  * <p>A selected image is decoded off the UI thread, bounded to
- * {@link #MAX_SOURCE_PX}, and normalized without stretching. Full-bleed
- * artwork is center-cropped to a square; PNG-style artwork has excess
- * transparent margins trimmed before it is fitted into the square. The
- * result is written atomically as WebP under the launcher's private files
- * directory. The source image can therefore move or disappear after
- * selection without breaking the override, and no broad storage permission
- * is required.
+ * {@link #MAX_SOURCE_PX}, and normalized without stretching. Empty transparent
+ * margins are trimmed, while the artwork's natural aspect ratio and alpha
+ * shape are preserved. Tile and compact-icon renderers decide how to place
+ * that source for their different aspect ratios.
  *
  * <p>The in-memory source version prevents an icon decode that started before a
  * change from publishing stale artwork after the new file has been committed.
@@ -44,7 +40,6 @@ final class CustomIconStore {
     static final int MAX_SOURCE_PX = 512;
 
     private static final int VISIBLE_ALPHA_THRESHOLD = 16;
-    private static final float TRANSPARENT_ICON_PADDING_FRACTION = 0.04f;
     private static final String DIR_NAME = "custom-icons";
     private static final String EXT = ".webp";
     private static final String TMP_EXT = ".webp.tmp";
@@ -206,16 +201,17 @@ final class CustomIconStore {
     }
 
     /**
-     * Normalize user-selected artwork without stretching it.
+     * Normalize user-selected artwork without changing its shape.
      *
-     * <p>Opaque/full-bleed images use center-crop so landscape and portrait
-     * files fill the square instead of acquiring transparent letterbox bars.
-     * Images with a transparent outer margin are treated as logo artwork:
-     * the visible bounds are trimmed, then fitted with a small breathing room
-     * so the logo is enlarged without cutting it off.
+     * <p>Transparent outer margins are removed so a logo is not stored as a
+     * tiny mark inside a large empty canvas. The remaining artwork keeps its
+     * natural width-to-height ratio and is only downscaled when its longest
+     * side exceeds {@code maxSide}. No square background, mask, or padding is
+     * introduced here; each display surface renders the same source into its
+     * own geometry.
      *
      * <p>The input remains caller-owned. The method returns it unchanged only
-     * when it is already a full-bleed square no larger than {@code maxSide}.
+     * when no crop or downscale is required.
      */
     static Bitmap normalizeForDisplay(Bitmap source, int maxSide) {
         if (source == null || maxSide <= 0) return null;
@@ -225,53 +221,35 @@ final class CustomIconStore {
 
         Rect visible = findVisibleBounds(source);
         if (visible == null || visible.isEmpty()) return null;
-        boolean hasTransparentMargin = visible.left > 0 || visible.top > 0
-                || visible.right < sourceWidth || visible.bottom < sourceHeight;
-        Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG
-                | Paint.DITHER_FLAG);
+        int[] outputSize = scaledDimensions(visible.width(), visible.height(), maxSide);
+        if (outputSize == null) return null;
 
-        if (!hasTransparentMargin) {
-            int[] crop = centerCropBounds(sourceWidth, sourceHeight);
-            if (crop == null) return null;
-            int cropSide = crop[2] - crop[0];
-            int outputSide = Math.min(maxSide, cropSide);
-            if (sourceWidth == sourceHeight && sourceWidth == outputSide) return source;
-            Bitmap output = Bitmap.createBitmap(
-                    outputSide, outputSide, Bitmap.Config.ARGB_8888);
-            new Canvas(output).drawBitmap(source,
-                    new Rect(crop[0], crop[1], crop[2], crop[3]),
-                    new RectF(0, 0, outputSide, outputSide), paint);
-            return output;
+        boolean usesWholeSource = visible.left == 0 && visible.top == 0
+                && visible.right == sourceWidth && visible.bottom == sourceHeight;
+        if (usesWholeSource
+                && outputSize[0] == sourceWidth && outputSize[1] == sourceHeight) {
+            return source;
         }
 
-        int contentWidth = visible.width();
-        int contentHeight = visible.height();
-        int contentMax = Math.max(contentWidth, contentHeight);
-        float usableFraction = 1f - 2f * TRANSPARENT_ICON_PADDING_FRACTION;
-        int outputSide = Math.min(maxSide,
-                Math.max(1, (int) Math.ceil(contentMax / usableFraction)));
-        float padding = outputSide * TRANSPARENT_ICON_PADDING_FRACTION;
-        float available = Math.max(1f, outputSide - 2f * padding);
-        float scale = Math.min(available / contentWidth, available / contentHeight);
-        float width = contentWidth * scale;
-        float height = contentHeight * scale;
-        float left = (outputSide - width) / 2f;
-        float top = (outputSide - height) / 2f;
-
         Bitmap output = Bitmap.createBitmap(
-                outputSide, outputSide, Bitmap.Config.ARGB_8888);
+                outputSize[0], outputSize[1], Bitmap.Config.ARGB_8888);
+        Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG
+                | Paint.DITHER_FLAG);
         new Canvas(output).drawBitmap(source, visible,
-                new RectF(left, top, left + width, top + height), paint);
+                new Rect(0, 0, outputSize[0], outputSize[1]), paint);
         return output;
     }
 
-    /** Center square within a source image, returned as left/top/right/bottom. */
-    static int[] centerCropBounds(int sourceWidth, int sourceHeight) {
-        if (sourceWidth <= 0 || sourceHeight <= 0) return null;
-        int side = Math.min(sourceWidth, sourceHeight);
-        int left = (sourceWidth - side) / 2;
-        int top = (sourceHeight - side) / 2;
-        return new int[] {left, top, left + side, top + side};
+    /** Aspect-preserving dimensions whose longest side is at most {@code maxSide}. */
+    static int[] scaledDimensions(int sourceWidth, int sourceHeight, int maxSide) {
+        if (sourceWidth <= 0 || sourceHeight <= 0 || maxSide <= 0) return null;
+        int longest = Math.max(sourceWidth, sourceHeight);
+        if (longest <= maxSide) return new int[] {sourceWidth, sourceHeight};
+        float scale = (float) maxSide / longest;
+        return new int[] {
+                Math.max(1, Math.round(sourceWidth * scale)),
+                Math.max(1, Math.round(sourceHeight * scale))
+        };
     }
 
     /** Tight bounds of pixels with meaningful alpha, or null when fully transparent. */

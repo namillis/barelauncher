@@ -36,24 +36,25 @@ public class CustomIconStoreTest {
                 CustomIconStore.computeSampleSize(Integer.MAX_VALUE, Integer.MAX_VALUE, 1));
     }
 
-    @Test public void centerCropBounds_landscape_cropsSides() {
-        assertArrayEquals(new int[] {350, 0, 1250, 900},
-                CustomIconStore.centerCropBounds(1600, 900));
+    @Test public void scaledDimensions_landscape_preservesAspectRatio() {
+        assertArrayEquals(new int[] {512, 288},
+                CustomIconStore.scaledDimensions(1600, 900, 512));
     }
 
-    @Test public void centerCropBounds_portrait_cropsTopAndBottom() {
-        assertArrayEquals(new int[] {0, 350, 900, 1250},
-                CustomIconStore.centerCropBounds(900, 1600));
+    @Test public void scaledDimensions_portrait_preservesAspectRatio() {
+        assertArrayEquals(new int[] {288, 512},
+                CustomIconStore.scaledDimensions(900, 1600, 512));
     }
 
-    @Test public void centerCropBounds_square_preservesWholeImage() {
-        assertArrayEquals(new int[] {0, 0, 512, 512},
-                CustomIconStore.centerCropBounds(512, 512));
+    @Test public void scaledDimensions_smallImage_preservesOriginalSize() {
+        assertArrayEquals(new int[] {320, 180},
+                CustomIconStore.scaledDimensions(320, 180, 512));
     }
 
-    @Test public void centerCropBounds_invalidDimensions_returnsNull() {
-        assertNull(CustomIconStore.centerCropBounds(0, 512));
-        assertNull(CustomIconStore.centerCropBounds(512, 0));
+    @Test public void scaledDimensions_invalidDimensions_returnsNull() {
+        assertNull(CustomIconStore.scaledDimensions(0, 512, 512));
+        assertNull(CustomIconStore.scaledDimensions(512, 0, 512));
+        assertNull(CustomIconStore.scaledDimensions(512, 512, 0));
     }
 
     @Test public void fileStemForIdentity_realPackage_preservesExistingFilename() {

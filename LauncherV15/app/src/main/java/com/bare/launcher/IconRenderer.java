@@ -127,7 +127,7 @@ final class IconRenderer {
      *  so scaled-icon rendering quality is unchanged. */
     private static final Paint sSrcAtopPaint = new Paint(Paint.FILTER_BITMAP_FLAG | Paint.ANTI_ALIAS_FLAG);
 
-    /** Fill paint for the generated-banner tile background. */
+    /** Pre-coloured generated-tile background paint; immutable after class init. */
     private static final Paint sTilePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
 
     static {
@@ -137,6 +137,7 @@ final class IconRenderer {
         sWhiteFill.setStyle(Paint.Style.FILL);
         sWhiteFill.setColor(Color.WHITE);
         sTilePaint.setStyle(Paint.Style.FILL);
+        sTilePaint.setColor(0xFF2A2A30);
     }
 
     // ── Banner tiles (v1.5.0 — TV-style 5:3 rounded-rect tiles) ─────
@@ -167,6 +168,108 @@ final class IconRenderer {
         return out;
     }
 
+    /**
+     * Render user-selected artwork as a launcher tile without forcing it
+     * through the app-icon square/plate pipeline.
+     *
+     * <p>Opaque artwork behaves like banner art: it center-crops to cover the
+     * complete 5:3 tile and is clipped only by the tile's rounded corners.
+     * Artwork containing transparency is treated as a free-form logo: its
+     * alpha contour is preserved and its longest fitting axis fills 92% of
+     * the tile, on the same neutral plate used by generated app tiles.
+     */
+    static Bitmap generateCustomTile(Bitmap artwork, int w, int h, int corner) {
+        if (!isUsable(artwork) || w <= 0 || h <= 0) return null;
+        if (!hasTransparentPixels(artwork)) {
+            return renderOpaqueArtwork(artwork, w, h, corner);
+        }
+
+        Bitmap out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(out);
+        RectF bounds = sRectTL.get(); bounds.set(0, 0, w, h);
+        canvas.drawRoundRect(bounds, corner, corner, sTilePaint);
+
+        float scale = Math.min(w * 0.92f / artwork.getWidth(),
+                h * 0.92f / artwork.getHeight());
+        float drawWidth = artwork.getWidth() * scale;
+        float drawHeight = artwork.getHeight() * scale;
+        float left = (w - drawWidth) / 2f;
+        float top = (h - drawHeight) / 2f;
+        bounds.set(left, top, left + drawWidth, top + drawHeight);
+        canvas.drawBitmap(artwork, null, bounds, sDrawPaint);
+        return out;
+    }
+
+    /**
+     * Render custom artwork for compact icon surfaces without adding the
+     * white square plate and 72% inset used for package-supplied legacy icons.
+     */
+    static Bitmap processCustomIcon(Bitmap artwork, int size) {
+        if (!isUsable(artwork) || size <= 0) return null;
+        if (!hasTransparentPixels(artwork)) {
+            return renderOpaqueArtwork(artwork, size, size, cornerRadiusPx(size));
+        }
+
+        Bitmap out = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
+        float scale = Math.min((float) size / artwork.getWidth(),
+                (float) size / artwork.getHeight());
+        float drawWidth = artwork.getWidth() * scale;
+        float drawHeight = artwork.getHeight() * scale;
+        float left = (size - drawWidth) / 2f;
+        float top = (size - drawHeight) / 2f;
+        RectF dst = sRectTL.get();
+        dst.set(left, top, left + drawWidth, top + drawHeight);
+        new Canvas(out).drawBitmap(artwork, null, dst, sDrawPaint);
+        return out;
+    }
+
+    /**
+     * True when any source pixel is meaningfully translucent.
+     *
+     * <p>This intentionally scans the bounded custom source (at most 512 px on
+     * its longest side) because a single transparent edge changes the render
+     * contract from full-bleed art to a contour-preserving logo. It runs only
+     * on the background icon executor for user-overridden artwork; the
+     * 12-sample package-icon heuristic would misclassify sparse alpha shapes.
+     */
+    static boolean hasTransparentPixels(Bitmap artwork) {
+        if (!isUsable(artwork) || !artwork.hasAlpha()) return false;
+        int width = artwork.getWidth();
+        int[] row = new int[width];
+        for (int y = 0; y < artwork.getHeight(); y++) {
+            artwork.getPixels(row, 0, width, 0, y, width, 1);
+            for (int pixel : row) {
+                if (Color.alpha(pixel) < 250) return true;
+            }
+        }
+        return false;
+    }
+
+    private static Bitmap renderOpaqueArtwork(
+            Bitmap artwork, int w, int h, int corner) {
+        float scale = Math.max((float) w / artwork.getWidth(),
+                (float) h / artwork.getHeight());
+        float drawWidth = artwork.getWidth() * scale;
+        float drawHeight = artwork.getHeight() * scale;
+        float left = (w - drawWidth) / 2f;
+        float top = (h - drawHeight) / 2f;
+
+        Bitmap out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(out);
+        int layer = canvas.saveLayer(0, 0, w, h, null);
+        RectF rect = sRectTL.get(); rect.set(0, 0, w, h);
+        canvas.drawRoundRect(rect, corner, corner, sMaskPaint);
+        rect.set(left, top, left + drawWidth, top + drawHeight);
+        canvas.drawBitmap(artwork, null, rect, sSrcInPaint);
+        canvas.restoreToCount(layer);
+        return out;
+    }
+
+    private static boolean isUsable(Bitmap bitmap) {
+        return bitmap != null && !bitmap.isRecycled()
+                && bitmap.getWidth() > 0 && bitmap.getHeight() > 0;
+    }
+
     /** Generate a uniform {@code w × h} rounded-rectangle tile for an app
      *  that ships no banner: a neutral dark plate with the app's icon centred
      *  (Fire-TV "generated banner" idiom). {@code corner} px corner radius. */
@@ -175,7 +278,6 @@ final class IconRenderer {
         Bitmap out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
         Canvas c = new Canvas(out);
         RectF rr = sRectTL.get(); rr.set(0, 0, w, h);
-        sTilePaint.setColor(0xFF2A2A30);                     // neutral dark tile
         c.drawRoundRect(rr, corner, corner, sTilePaint);
         if (icon != null) {
             int isz = Math.round(h * 0.62f);                 // icon ~62% of tile height
