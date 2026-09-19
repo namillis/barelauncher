@@ -332,7 +332,7 @@ final class AppListCache {
                 : (a.component != null ? a.component.getClassName() : null);
         return new Entry() {
             @Override public String pkg()           { return a.packageName; }
-            @Override public String label()         { return a.label; }
+            @Override public String label()         { return a.sourceLabel; }
             @Override public String activityClass() { return cls; }
         };
     }

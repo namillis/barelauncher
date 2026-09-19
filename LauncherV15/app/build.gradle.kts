@@ -429,14 +429,13 @@ android {
         // (pick a folder, rotate each restart or every 5–60 min; the timer
         // runs foreground-only and the instant snapshot cold-start is
         // preserved). SemVer MINOR — additive, no behaviour change when unused.
-        // Bumped 30 → 31: 2.2.1 fixes custom-icon normalization. Full-bleed
-        // landscape and portrait images are center-cropped instead of being
-        // letterboxed into a transparent square, while transparent PNG-style
-        // icons have excess outer padding trimmed without stretching.
-        // SemVer PATCH — existing launcher behavior is unchanged unless a
-        // custom icon is selected.
+        // Bumped 30 → 31: 2.3.0 expands local customization. Full-bleed
+        // custom images are normalized without letterboxing, TV inputs can
+        // use custom artwork, apps and inputs can have local display names,
+        // and picker-return artwork refreshes preserve drawer focus.
+        // SemVer MINOR — additive customization with scoped bug fixes.
         versionCode   = 31
-        versionName   = "2.2.1"
+        versionName   = "2.3.0"
         resourceConfigurations += listOf("en")
 
         // Instrumentation test runner. Required so :app:connectedDebugAndroidTest

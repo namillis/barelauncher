@@ -62,13 +62,14 @@ Most TV launchers are heavy, online, and crowded with promotions. BareLauncher i
 | ⚡ **Instant navigation** | Zero-lag scrolling on a TV remote via a custom recycling shelf — no `RecyclerView`. |
 | 🗂️ **Home row + app drawer** | Favorites on the home screen, a pull-down drawer for the rest. Reorder everything freely with the D-pad. |
 | 🎛️ **Button shortcuts** | Assign remote colour/menu keys to any app directly from the home screen — no Accessibility Service required. |
-| 🗃️ **Manage apps** | Long-press any app to move, hide, open App info, uninstall, or choose a custom icon. Hidden apps stay installed, just out of sight. |
-| 🎨 **Custom app icons** | Pick a local PNG, JPEG, or WebP for any app and reset to its original artwork at any time. Images stay private on the device. |
+| 🗃️ **Manage apps** | Long-press any app or input to move, hide, rename, or choose custom artwork. Installed apps also expose App info and uninstall actions. |
+| 🎨 **Custom app &amp; input icons** | Pick a local PNG, JPEG, or WebP for apps and HDMI/input tiles, then reset to the original artwork at any time. Images stay private on the device. |
+| ✏️ **Local display names** | Rename apps and TV inputs inside BareLauncher without changing their Android package or system label. Reset restores the original name. |
 | 🖼️ **Wallpaper system** | Static wallpapers, folder-based slideshows, startup wallpaper rotation, and hardware bitmap rendering that saves 8–32 MB of RAM. |
 | 🎞️ **Wallpaper slideshows** | Turn any folder of photos or wallpapers into a rotating home screen background. Supports internal storage and USB/SD media with configurable intervals (20 sec–3 min). |
 | 🌙 **Hide UI when idle** | Automatically hides the launcher interface after inactivity, leaving only the clock so your wallpapers can fill the entire screen until the screensaver starts. |
-| 💾 **Backup & Restore** | Save and restore your launcher setup, including app order, hidden apps, clock settings, and preferences. |
-| 📺 **TV input tiles** | Add HDMI, AV, and other supported TV inputs directly to the home screen for quick access. |
+| 💾 **Backup & Restore** | Save and restore your launcher setup, including app order, local names, hidden apps, button shortcuts, and clock style. |
+| 📺 **TV input tiles** | Add HDMI, AV, and other supported TV inputs directly to the home screen, then rename them or give each source its own icon. |
 | 🕒 **3-state clock** | Full (time + day/date), time-only, or off. Locale-aware, 12/24-hour support with instant timezone updates. |
 | 📶 **Wi-Fi & settings pills** | Live Wi-Fi indicator plus a Settings pill — long-press it to open system settings instantly. |
 | ✨ **Smooth animations** | Lightweight app launch animations that make navigation feel smoother without sacrificing speed. |

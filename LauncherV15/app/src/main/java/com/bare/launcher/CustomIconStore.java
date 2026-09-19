@@ -16,6 +16,9 @@ import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -295,9 +298,35 @@ final class CustomIconStore {
         return right >= left ? new Rect(left, top, right + 1, bottom + 1) : null;
     }
 
-    private File fileFor(String packageName, String suffix) {
-        if (!isSafePackageName(packageName)) return null;
-        return new File(dir, packageName + suffix);
+    /**
+     * Stable flat filename stem for an app package or synthetic TV-input identity.
+     * Real package names retain their existing filenames. TV Input Framework IDs
+     * can contain slashes and component names, so they use a fixed-size SHA-256
+     * stem rather than weakening path validation or risking filename collisions.
+     */
+    static String fileStemForIdentity(String identity) {
+        if (isSafePackageName(identity)) return identity;
+        if (!AppInfo.isTvInputIdentity(identity)) return null;
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256")
+                    .digest(identity.substring(AppInfo.TV_INPUT_PREFIX.length())
+                            .getBytes(StandardCharsets.UTF_8));
+            StringBuilder stem = new StringBuilder("@tvinput_");
+            for (byte value : digest) {
+                int b = value & 0xff;
+                if (b < 0x10) stem.append('0');
+                stem.append(Integer.toHexString(b));
+            }
+            return stem.toString();
+        } catch (NoSuchAlgorithmException impossible) {
+            return null; // SHA-256 is mandatory on every supported Android runtime.
+        }
+    }
+
+    private File fileFor(String identity, String suffix) {
+        String stem = fileStemForIdentity(identity);
+        if (stem == null) return null;
+        return new File(dir, stem + suffix);
     }
 
     private void bumpVersion(String packageName) {

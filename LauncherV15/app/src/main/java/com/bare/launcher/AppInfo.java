@@ -6,10 +6,10 @@ import android.content.pm.ResolveInfo;
 /**
  * Record describing one launchable app on the home shelf.
  *
- * <p>The identity fields ({@link #packageName}, {@link #label},
- * {@link #component}) are immutable; {@link #ri} and {@link #displayLabel}
- * are mutable per-instance memo caches populated after construction (see
- * their individual javadocs for the threading contract).
+ * <p>The identity fields ({@link #packageName}, {@link #sourceLabel},
+ * {@link #component}) are immutable. {@link #label} is the effective
+ * user-visible label and may be replaced by a local launcher override;
+ * {@link #ri} and {@link #displayLabel} are mutable per-instance caches.
  *
  * <p>Hot-path access pattern:
  * <ul>
@@ -27,17 +27,19 @@ import android.content.pm.ResolveInfo;
  *       {@code PackageManager.getActivityIcon(component)}.</li>
  * </ul>
  *
- * <p>This class used to live as a {@code static final} nested class
- * inside {@link LauncherActivity}. Extracted to its own file in v1.4.0
- * so the v1.4.0 cold-start cache helpers
- * ({@link AppListCache#toAppInfo}, {@code IconDiskCache} key derivation)
- * can construct {@link AppInfo} instances without reaching into the
- * activity's nested namespace. Behaviour is identical — the class is
- * still package-private and the constructor is unchanged.
+ * <p>This class moved out of {@link LauncherActivity} in v1.4.0 so cache
+ * helpers can construct entries without reaching into an activity-owned
+ * nested type. It remains package-private because only launcher internals
+ * consume it.
  */
 final class AppInfo {
+    static final String TV_INPUT_PREFIX = "tvinput://";
+
     final String        packageName;
-    final String        label;
+    /** Label supplied by PackageManager or the TV Input Framework. */
+    final String        sourceLabel;
+    /** Effective launcher label; source label unless the user renamed this entry. */
+    volatile String     label;
     final ComponentName component;
     /**
      * The platform {@link ResolveInfo} for this app, when known.
@@ -71,9 +73,10 @@ final class AppInfo {
      * computed and cached the first time any {@code CellView} binds this
      * app, then reused by every subsequent bind.
      *
-     * <p>The truncation result is a pure function of the label text, the
-     * shelf cell's width budget, the label text size, and the typeface —
-     * all of which are constant for the activity's lifetime. There is
+     * <p>The truncation result is a pure function of the effective label,
+     * shelf cell's width budget, label text size, and typeface. These inputs
+     * stay fixed between rename/configuration events, and both events clear
+     * this memo before cells repaint. There is
      * therefore no reason for a recycled cell that scrolls back onto a
      * previously-seen app during a fast fling to re-run
      * {@link android.text.TextUtils#ellipsize} (which allocates a
@@ -82,12 +85,12 @@ final class AppInfo {
      * that to one measure + at-most-one ellipsize per app for the whole
      * session.
      *
-     * <p>{@code null} means "not computed yet". The field is written and
-     * read exclusively on the main/UI thread (inside {@code CellView.bind}
-     * and cleared in {@code LauncherActivity.onConfigurationChanged} when a
-     * density / font-scale change can move the truncation point), so it
-     * needs no {@code volatile} / synchronisation — unlike {@link #ri},
-     * which is touched by the icon-decode worker threads.
+     * <p>{@code null} means "not computed yet". For live entries the field
+     * is read and written only on the UI thread by cell binding, rename, and
+     * configuration-change paths. Background scans may clear it only on new
+     * AppInfo objects before those objects are published to the UI, so no
+     * synchronization is required — unlike {@link #ri}, which workers read
+     * after publication.
      */
     String displayLabel;
 
@@ -109,10 +112,17 @@ final class AppInfo {
 
     private AppInfo(String pkg, String lbl, ComponentName cmp, ResolveInfo r, String tvInput) {
         packageName = pkg;
+        sourceLabel = lbl;
         label       = lbl;
         component   = cmp;
         ri          = r;
         tvInputId   = tvInput;
+    }
+
+    /** Apply a sanitized local name, or restore the source label when null. */
+    void setCustomLabel(String customLabel) {
+        label = customLabel != null ? customLabel : sourceLabel;
+        displayLabel = null;
     }
 
     /** Build a TV-input entry. The synthetic {@link #packageName}
@@ -123,6 +133,11 @@ final class AppInfo {
      *  (real package names are never of this shape) and contains no comma, so
      *  it is safe inside the comma-separated persisted order string. */
     static AppInfo tvInput(String inputId, String label) {
-        return new AppInfo("tvinput://" + inputId, label, null, null, inputId);
+        return new AppInfo(TV_INPUT_PREFIX + inputId, label, null, null, inputId);
+    }
+
+    static boolean isTvInputIdentity(String identity) {
+        return identity != null && identity.startsWith(TV_INPUT_PREFIX)
+                && identity.length() > TV_INPUT_PREFIX.length();
     }
 }

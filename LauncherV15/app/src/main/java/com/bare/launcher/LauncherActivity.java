@@ -2,6 +2,7 @@ package com.bare.launcher;
 
 import android.app.Activity;
 import android.app.ActivityManager;
+import android.app.AlertDialog;
 import android.content.BroadcastReceiver;
 import android.content.ComponentName;
 import android.content.Context;
@@ -31,6 +32,8 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.provider.Settings;
+import android.text.InputFilter;
+import android.text.InputType;
 import android.text.TextUtils;
 import android.text.TextPaint;
 import android.util.ArrayMap;
@@ -54,6 +57,7 @@ import android.view.animation.OvershootInterpolator;
 import android.view.animation.PathInterpolator;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
+import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.OverScroller;
@@ -65,6 +69,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
@@ -129,7 +134,9 @@ public class LauncherActivity extends Activity {
     // are still visible in the keymap picker so they can be bound to a
     // remote-key shortcut. Loaded once at startup into hiddenApps; saved
     // synchronously on every toggle.
-    private static final String KEY_HIDDEN     = "hidden_apps";
+    private static final String KEY_HIDDEN      = "hidden_apps";
+    /** Encoded package/input identity → local display-name overrides. */
+    private static final String KEY_CUSTOM_NAMES = "custom_names";
     /** Persisted "show clock" preference. true = clock pill rendered with
      *  a "EEE · h:mm a" date prefix (locale-aware short day-of-week);
      *  false = clock pill hidden entirely and no minute tick scheduled.
@@ -604,9 +611,12 @@ public class LauncherActivity extends Activity {
     private       TextView    menuHide       = null;
     private       TextView    menuChangeIcon = null;
     private       TextView    menuResetIcon  = null;
+    private       TextView    menuRename     = null;
     private       TextView    menuUninstall  = null;
     private       TextView    menuAppInfo    = null;
     private       TextView    menuMove       = null;
+    private       AlertDialog renameDialog   = null;
+    private       EditText    renameInput    = null;
     /** Snapshot of custom-icon presence for the app owning the open menu. */
     private boolean menuHasCustomIcon = false;
     private final int[]    menuCellLoc      = new int[2];
@@ -712,6 +722,8 @@ public class LauncherActivity extends Activity {
     // inside the hide-manager mode. Iteration order doesn't matter — we
     // never list this set directly; we only do contains() checks.
     private final ArraySet<String>      hiddenApps        = new ArraySet<>();
+    /** User-owned local labels keyed by real package or synthetic TV-input identity. */
+    private final ConcurrentHashMap<String, String> customNames = new ConcurrentHashMap<>();
     // Manage-hidden-apps used to live as a 7th, visually-offset row at
     // the bottom of the slot column. v1.3.0 moves it into the unified
     // settings panel (alongside Set wallpaper / Show clock / System
@@ -1070,6 +1082,7 @@ public class LauncherActivity extends Activity {
                                 && !intent.getBooleanExtra(Intent.EXTRA_REPLACING, false)) {
                             CustomIconStore store = customIconStore;
                             if (store != null) store.delete(pkg);
+                            if (customNames.remove(pkg) != null) saveCustomNames();
                         }
                     }
                 }
@@ -1870,6 +1883,12 @@ public class LauncherActivity extends Activity {
         customIconStore = null;
         pendingCustomIconPackage = null;
         pendingCustomIconLabel = null;
+        AlertDialog activeRenameDialog = renameDialog;
+        renameDialog = null;
+        renameInput = null;
+        if (activeRenameDialog != null && activeRenameDialog.isShowing()) {
+            activeRenameDialog.dismiss();
+        }
         if (iconCache != null) iconCache.evictAll();
         if (bannerCache != null) bannerCache.evictAll();
         iconInflight.clear();
@@ -1900,7 +1919,7 @@ public class LauncherActivity extends Activity {
         aboutQrLink = null; aboutQrUrl = null;
         aboutRows[0] = null; aboutRows[1] = null;
         menuOverlay = null; menuHide = null; menuChangeIcon = null; menuResetIcon = null;
-        menuUninstall = null; menuAppInfo = null; menuMove = null;
+        menuRename = null; menuUninstall = null; menuAppInfo = null; menuMove = null;
         keymapOverlay = null; keymapColumn = null; keymapCard = null;
         keymapPickerView = null; keymapPickerTitle = null;
         keymapPickerHsv = null; keymapPickerStrip = null;
@@ -2470,6 +2489,26 @@ public class LauncherActivity extends Activity {
             if (h != null) h.onMenuResetIcon();
         });
 
+        menuRename = new TextView(this);
+        menuRename.setText(R.string.menu_rename);
+        menuRename.setTextColor(Color.WHITE);
+        menuRename.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 13);
+        menuRename.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+        menuRename.setGravity(Gravity.CENTER);
+        menuRename.setPadding(dp(20), dp(11), dp(20), dp(11));
+        menuRename.setClickable(true);
+        menuRename.setFocusable(false);
+        menuRename.setContentDescription(getString(R.string.cd_rename_app));
+        android.graphics.drawable.GradientDrawable nBg =
+                new android.graphics.drawable.GradientDrawable();
+        nBg.setCornerRadius(itemRadius);
+        nBg.setColor(Color.TRANSPARENT);
+        menuRename.setBackground(nBg);
+        menuRename.setOnClickListener(v -> {
+            ReorderHost h = menuHost;
+            if (h != null) h.onMenuRename();
+        });
+
         menuUninstall = new TextView(this);
         menuUninstall.setText(R.string.menu_uninstall);
         menuUninstall.setTextColor(0xFFFF6B6B);
@@ -2545,9 +2584,13 @@ public class LauncherActivity extends Activity {
         android.widget.LinearLayout.LayoutParams itemLpReset =
                 new android.widget.LinearLayout.LayoutParams(dp(140), WRAP);
         itemLpReset.bottomMargin = dp(2);
+        android.widget.LinearLayout.LayoutParams itemLpRename =
+                new android.widget.LinearLayout.LayoutParams(dp(140), WRAP);
+        itemLpRename.bottomMargin = dp(2);
         menuCol.addView(menuHide, itemLp0);
         menuCol.addView(menuChangeIcon, itemLpChange);
         menuCol.addView(menuResetIcon, itemLpReset);
+        menuCol.addView(menuRename, itemLpRename);
         menuCol.addView(menuUninstall, itemLp);
         android.widget.LinearLayout.LayoutParams itemLp2 =
                 new android.widget.LinearLayout.LayoutParams(dp(140), WRAP);
@@ -2561,19 +2604,20 @@ public class LauncherActivity extends Activity {
 
     void showContextMenu(View cell) {
         if (menuOverlay == null || menuHide == null || menuChangeIcon == null
-                || menuResetIcon == null || menuUninstall == null
+                || menuResetIcon == null || menuRename == null || menuUninstall == null
                 || menuAppInfo == null || menuMove == null) return;
-        // TV-input tiles have no package icon, uninstall target, or App-info
-        // page. A regular app always gets Change icon; Reset icon appears only
-        // while that app has a persistent override.
+        // TV inputs support the same local icon and name customization as apps.
+        // Only Uninstall and App info stay hidden because an input is not an
+        // installed Android package.
         ReorderHost host = menuHost;
-        boolean inputMode = (host != null && host.menuAppIsInput());
-        menuHasCustomIcon = !inputMode && host != null && host.menuAppHasCustomIcon();
-        int extraVis = inputMode ? View.GONE : View.VISIBLE;
-        menuChangeIcon.setVisibility(extraVis);
+        boolean inputMode = host != null && host.menuAppIsInput();
+        menuHasCustomIcon = host != null && host.menuAppHasCustomIcon();
+        menuChangeIcon.setVisibility(View.VISIBLE);
         menuResetIcon.setVisibility(menuHasCustomIcon ? View.VISIBLE : View.GONE);
-        menuUninstall.setVisibility(extraVis);
-        menuAppInfo.setVisibility(extraVis);
+        menuRename.setVisibility(View.VISIBLE);
+        int packageActionVisibility = inputMode ? View.GONE : View.VISIBLE;
+        menuUninstall.setVisibility(packageActionVisibility);
+        menuAppInfo.setVisibility(packageActionVisibility);
         cell.getLocationOnScreen(menuCellLoc);
         FrameLayout r = root; if (r == null) return;
         r.getLocationOnScreen(menuRootLoc);
@@ -2693,23 +2737,28 @@ public class LauncherActivity extends Activity {
      *  place instead of being duplicated across the two cell key handlers. */
     private static final int[] MENU_ROWS_FULL = {
             RecyclingShelfView.MENU_HIDE, RecyclingShelfView.MENU_CHANGE_ICON,
-            RecyclingShelfView.MENU_UNINSTALL, RecyclingShelfView.MENU_APP_INFO,
-            RecyclingShelfView.MENU_MOVE };
+            RecyclingShelfView.MENU_RENAME, RecyclingShelfView.MENU_UNINSTALL,
+            RecyclingShelfView.MENU_APP_INFO, RecyclingShelfView.MENU_MOVE };
     private static final int[] MENU_ROWS_WITH_RESET = {
             RecyclingShelfView.MENU_HIDE, RecyclingShelfView.MENU_CHANGE_ICON,
-            RecyclingShelfView.MENU_RESET_ICON, RecyclingShelfView.MENU_UNINSTALL,
-            RecyclingShelfView.MENU_APP_INFO, RecyclingShelfView.MENU_MOVE };
-    /** Input tiles expose only Hide + Move. */
+            RecyclingShelfView.MENU_RESET_ICON, RecyclingShelfView.MENU_RENAME,
+            RecyclingShelfView.MENU_UNINSTALL, RecyclingShelfView.MENU_APP_INFO,
+            RecyclingShelfView.MENU_MOVE };
     private static final int[] MENU_ROWS_INPUT = {
-            RecyclingShelfView.MENU_HIDE, RecyclingShelfView.MENU_MOVE };
+            RecyclingShelfView.MENU_HIDE, RecyclingShelfView.MENU_CHANGE_ICON,
+            RecyclingShelfView.MENU_RENAME, RecyclingShelfView.MENU_MOVE };
+    private static final int[] MENU_ROWS_INPUT_WITH_RESET = {
+            RecyclingShelfView.MENU_HIDE, RecyclingShelfView.MENU_CHANGE_ICON,
+            RecyclingShelfView.MENU_RESET_ICON, RecyclingShelfView.MENU_RENAME,
+            RecyclingShelfView.MENU_MOVE };
 
     /** Next visible menu selection, clamped at the first and last row. */
     private int menuNavSel(int cur, int dir) {
         ReorderHost host = menuHost;
         boolean input = host != null && host.menuAppIsInput();
-        boolean hasCustomIcon = !input && menuHasCustomIcon;
-        int[] order = input ? MENU_ROWS_INPUT
-                : (hasCustomIcon ? MENU_ROWS_WITH_RESET : MENU_ROWS_FULL);
+        int[] order = input
+                ? (menuHasCustomIcon ? MENU_ROWS_INPUT_WITH_RESET : MENU_ROWS_INPUT)
+                : (menuHasCustomIcon ? MENU_ROWS_WITH_RESET : MENU_ROWS_FULL);
         int idx = 0;
         for (int i = 0; i < order.length; i++) if (order[i] == cur) { idx = i; break; }
         idx = Math.max(0, Math.min(order.length - 1, idx + dir));
@@ -2719,7 +2768,8 @@ public class LauncherActivity extends Activity {
     void updateMenuHighlight() {
         ReorderHost h = menuHost; if (h == null) return;
         if (menuHide == null || menuChangeIcon == null || menuResetIcon == null
-                || menuUninstall == null || menuAppInfo == null || menuMove == null) return;
+                || menuRename == null || menuUninstall == null
+                || menuAppInfo == null || menuMove == null) return;
         int sel = h.menuSelection();
         // Bright frosted-white pill for the selected item, mirroring the
         // toolbar buttons & keymap rows. The selected item's text inverts
@@ -2728,12 +2778,14 @@ public class LauncherActivity extends Activity {
         setMenuItemBg(menuHide,       sel == RecyclingShelfView.MENU_HIDE        ? hlWhite : Color.TRANSPARENT);
         setMenuItemBg(menuChangeIcon, sel == RecyclingShelfView.MENU_CHANGE_ICON ? hlWhite : Color.TRANSPARENT);
         setMenuItemBg(menuResetIcon,  sel == RecyclingShelfView.MENU_RESET_ICON  ? hlWhite : Color.TRANSPARENT);
+        setMenuItemBg(menuRename,     sel == RecyclingShelfView.MENU_RENAME      ? hlWhite : Color.TRANSPARENT);
         setMenuItemBg(menuUninstall,  sel == RecyclingShelfView.MENU_UNINSTALL   ? hlWhite : Color.TRANSPARENT);
         setMenuItemBg(menuAppInfo,    sel == RecyclingShelfView.MENU_APP_INFO    ? hlWhite : Color.TRANSPARENT);
         setMenuItemBg(menuMove,       sel == RecyclingShelfView.MENU_MOVE        ? hlWhite : Color.TRANSPARENT);
         menuHide      .setTextColor(sel == RecyclingShelfView.MENU_HIDE        ? 0xFF111114 : 0xCCFFFFFF);
         menuChangeIcon.setTextColor(sel == RecyclingShelfView.MENU_CHANGE_ICON ? 0xFF111114 : 0xCCFFFFFF);
         menuResetIcon .setTextColor(sel == RecyclingShelfView.MENU_RESET_ICON  ? 0xFF111114 : 0xCCFFFFFF);
+        menuRename    .setTextColor(sel == RecyclingShelfView.MENU_RENAME      ? 0xFF111114 : 0xCCFFFFFF);
         menuUninstall .setTextColor(sel == RecyclingShelfView.MENU_UNINSTALL   ? 0xFFC0202A : 0xCCFF6B6B);
         menuAppInfo   .setTextColor(sel == RecyclingShelfView.MENU_APP_INFO    ? 0xFF111114 : 0xCCFFFFFF);
         menuMove      .setTextColor(sel == RecyclingShelfView.MENU_MOVE        ? 0xFF111114 : 0xCCFFFFFF);
@@ -3202,6 +3254,7 @@ public class LauncherActivity extends Activity {
         private static final int MENU_HIDE        = 3;
         private static final int MENU_CHANGE_ICON = 4;
         private static final int MENU_RESET_ICON  = 5;
+        private static final int MENU_RENAME      = 6;
         int menuSelection = MENU_MOVE;
 
         RecyclingShelfView(Context ctx) {
@@ -3269,6 +3322,14 @@ public class LauncherActivity extends Activity {
                     ? displayed.get(dragIndex) : null;
             exitReorderMode(false);
             LauncherActivity.this.resetCustomIcon(app);
+        }
+        @Override public void onMenuRename() {
+            if (!reorderMode) return;
+            menuSelection = MENU_RENAME;
+            int idx = dragIndex;
+            AppInfo app = (idx >= 0 && idx < displayed.size()) ? displayed.get(idx) : null;
+            exitReorderMode(false);
+            LauncherActivity.this.showRenameDialog(app, false, idx);
         }
         @Override public void onMenuMove() {
             if (!reorderMode) return;
@@ -3586,6 +3647,18 @@ public class LauncherActivity extends Activity {
                     cv.iconBitmap = null;
                     cv.invalidate();
                     LauncherActivity.this.loadBannerAsync(cv.boundApp, cv);
+                }
+            }
+        }
+
+        void refreshLabel(String identity) {
+            if (identity == null) return;
+            for (int i = 0; i < attached.size(); i++) {
+                CellView cv = attached.valueAt(i);
+                if (cv != null && cv.boundApp != null
+                        && identity.equals(cv.boundApp.packageName)) {
+                    cv.bind(cv.boundApp, cv.boundIndex);
+                    cv.invalidate();
                 }
             }
         }
@@ -4225,6 +4298,7 @@ public class LauncherActivity extends Activity {
                                 else if (menuSelection == MENU_HIDE)        RecyclingShelfView.this.onMenuHide();
                                 else if (menuSelection == MENU_CHANGE_ICON) RecyclingShelfView.this.onMenuChangeIcon();
                                 else if (menuSelection == MENU_RESET_ICON)  RecyclingShelfView.this.onMenuResetIcon();
+                                else if (menuSelection == MENU_RENAME)      RecyclingShelfView.this.onMenuRename();
                                 else                                        enterActiveMove();   // MOVE
                                 return true;
                             case KeyEvent.KEYCODE_BACK:
@@ -4639,6 +4713,14 @@ public class LauncherActivity extends Activity {
             exitReorderMode(false);
             LauncherActivity.this.resetCustomIcon(app);
         }
+        @Override public void onMenuRename() {
+            if (!reorderMode) return;
+            menuSelection = RecyclingShelfView.MENU_RENAME;
+            int idx = dragIndex;
+            AppInfo app = (idx >= 0 && idx < displayed.size()) ? displayed.get(idx) : null;
+            exitReorderMode(false);
+            LauncherActivity.this.showRenameDialog(app, true, idx);
+        }
         @Override public void onMenuMove() {
             if (!reorderMode) return;
             menuSelection = RecyclingShelfView.MENU_MOVE;
@@ -4921,6 +5003,18 @@ public class LauncherActivity extends Activity {
                     cv.iconBitmap = null;
                     cv.invalidate();
                     LauncherActivity.this.loadBannerAsync(cv.boundApp, cv);
+                }
+            }
+        }
+
+        void refreshLabel(String identity) {
+            if (identity == null) return;
+            for (int i = 0; i < attached.size(); i++) {
+                DrawerCell cv = attached.valueAt(i);
+                if (cv != null && cv.boundApp != null
+                        && identity.equals(cv.boundApp.packageName)) {
+                    cv.bind(cv.boundApp, cv.boundIndex);
+                    cv.invalidate();
                 }
             }
         }
@@ -5428,6 +5522,7 @@ public class LauncherActivity extends Activity {
                                 else if (menuSelection == RecyclingShelfView.MENU_HIDE)        triggerHide();
                                 else if (menuSelection == RecyclingShelfView.MENU_CHANGE_ICON) AppDrawer.this.onMenuChangeIcon();
                                 else if (menuSelection == RecyclingShelfView.MENU_RESET_ICON)  AppDrawer.this.onMenuResetIcon();
+                                else if (menuSelection == RecyclingShelfView.MENU_RENAME)      AppDrawer.this.onMenuRename();
                                 else                                                            enterActiveMove();
                                 return true;
                             case KeyEvent.KEYCODE_BACK:
@@ -5593,6 +5688,7 @@ public class LauncherActivity extends Activity {
         if (appList.isEmpty()) {
             boolean ok = AppListCache.readFile(this, (pkg, lbl, cls) -> {
                 AppInfo a = AppListCache.toAppInfo(pkg, lbl, cls);
+                applyCustomName(a);
                 appList.add(a);
                 appByPackage.put(pkg, a);
             });
@@ -5619,6 +5715,7 @@ public class LauncherActivity extends Activity {
                 List<AppInfo> fresh;
                 try {
                     fresh = queryApps();
+                    applyCustomNames(fresh);
                     applyStoredOrder(fresh);
                 } catch (Throwable t) {
                     // Belt-and-braces: PackageManager binder errors, dead
@@ -5647,6 +5744,11 @@ public class LauncherActivity extends Activity {
                     // lifetime.
                     try {
                         if (destroyed) return;
+                        // A rename can complete after the background scan took
+                        // its custom-name snapshot. Re-apply on the UI thread
+                        // before publishing fresh AppInfo objects so that scan
+                        // can never revert the just-saved label.
+                        applyCustomNames(freshFinal);
                         // Build the "fresh package set" exactly ONCE per
                         // reconcile and share it across the icon-cache
                         // invalidation, pruneHiddenApps, and pruneKeyMap
@@ -6238,6 +6340,26 @@ public class LauncherActivity extends Activity {
         prefs
                 .edit().putString(KEY_HIDDEN,
                         KeymapStore.serializeHiddenApps(hiddenApps)).apply();
+    }
+
+    /** Load user-owned labels before the cold-start app cache is painted. */
+    private void loadCustomNames() {
+        customNames.clear();
+        customNames.putAll(CustomNameStore.parse(prefs.getString(KEY_CUSTOM_NAMES, null)));
+    }
+
+    private void saveCustomNames() {
+        prefs.edit().putString(KEY_CUSTOM_NAMES,
+                CustomNameStore.serialize(customNames)).apply();
+    }
+
+    private void applyCustomName(AppInfo app) {
+        if (app != null) app.setCustomLabel(customNames.get(app.packageName));
+    }
+
+    private void applyCustomNames(List<AppInfo> apps) {
+        if (apps == null) return;
+        for (int i = 0, n = apps.size(); i < n; i++) applyCustomName(apps.get(i));
     }
 
     /** Drop hidden-set entries whose package is no longer installed.
@@ -8322,9 +8444,10 @@ public class LauncherActivity extends Activity {
             AppInfo a = keymapPickerApps.get(i);
             // TV inputs have no app icon in the cache — draw a small input
             // glyph so the chip isn't blank. Apps use their cached round icon.
-            Bitmap b = (a.tvInputId != null)
-                    ? IconRenderer.generateInputGlyphIcon(dp(20), density)
-                    : ((iconCache != null) ? iconCache.get(a.packageName) : null);
+            Bitmap b = (iconCache != null) ? iconCache.get(a.packageName) : null;
+            if (b == null && a.tvInputId != null) {
+                b = IconRenderer.generateInputGlyphIcon(dp(20), density);
+            }
             addPickerChip(strip, a.label, b, false);
         }
     }
@@ -8776,9 +8899,10 @@ public class LauncherActivity extends Activity {
         for (int i = 0; i < hideListApps.size(); i++) {
             AppInfo a = hideListApps.get(i);
             // TV inputs have no cached app icon — use a small input glyph.
-            Bitmap b = (a.tvInputId != null)
-                    ? IconRenderer.generateInputGlyphIcon(dp(22), density)
-                    : ((iconCache != null) ? iconCache.get(a.packageName) : null);
+            Bitmap b = (iconCache != null) ? iconCache.get(a.packageName) : null;
+            if (b == null && a.tvInputId != null) {
+                b = IconRenderer.generateInputGlyphIcon(dp(22), density);
+            }
             addHideRow(strip, a.label, b);
         }
         if (hideListApps.isEmpty()) {
@@ -9273,11 +9397,6 @@ public class LauncherActivity extends Activity {
     private Bitmap loadBannerBlocking(AppInfo app) {
         if (app == null) return null;
         final int w = tileWpx, h = bannerHpx, corner = tileCornerPx;
-        // TV-input tile: a generated glyph + label (there is no app banner or
-        // icon to resolve). Distinct, self-identifying at rest.
-        if (app.tvInputId != null) {
-            return IconRenderer.generateInputTile(w, h, corner, app.label, density);
-        }
         CustomIconStore customStore = customIconStore;
         if (customStore != null) {
             Bitmap custom = customStore.read(app.packageName);
@@ -9289,6 +9408,10 @@ public class LauncherActivity extends Activity {
                     if (!custom.isRecycled()) custom.recycle();
                 }
             }
+        }
+        // TV-input tile without a user override: generated glyph + label.
+        if (app.tvInputId != null) {
+            return IconRenderer.generateInputTile(w, h, corner, app.label, density);
         }
         Drawable banner = resolveBannerDrawable(app);
         if (banner != null) {
@@ -9483,10 +9606,10 @@ public class LauncherActivity extends Activity {
 
     // ── Per-app custom icons (SAF picker, private normalized source) ──────
 
-    /** Open the system image picker for a real app. Returns whether it launched. */
+    /** Open the system image picker for an app or TV input. */
     @SuppressWarnings("deprecation")
     private boolean openCustomIconPicker(AppInfo app) {
-        if (app == null || app.tvInputId != null) return false;
+        if (app == null) return false;
         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
         intent.setType("image/*");
         intent.addCategory(Intent.CATEGORY_OPENABLE);
@@ -9519,7 +9642,7 @@ public class LauncherActivity extends Activity {
                 runOnUiThread(() -> {
                     if (destroyed) return;
                     AppInfo current = findAppByPackage(packageName);
-                    if (saved && isPackageInstalled(packageName)) {
+                    if (saved && isArtworkTargetPresent(packageName)) {
                         if (current != null) refreshAppArtwork(current);
                         else loadApps();
                         showToast(getString(R.string.toast_custom_icon_set,
@@ -9537,9 +9660,9 @@ public class LauncherActivity extends Activity {
         }
     }
 
-    /** Remove an override and repaint the selected app with package artwork. */
+    /** Remove an override and repaint the selected app or input with default artwork. */
     private void resetCustomIcon(AppInfo app) {
-        if (app == null || app.tvInputId != null) return;
+        if (app == null) return;
         CustomIconStore store = customIconStore;
         ThreadPoolExecutor executor = iconExecutor;
         if (store == null || executor == null) {
@@ -9554,7 +9677,7 @@ public class LauncherActivity extends Activity {
                     if (destroyed) return;
                     AppInfo current = findAppByPackage(app.packageName);
                     if (deleted) {
-                        if (isPackageInstalled(app.packageName)) {
+                        if (isArtworkTargetPresent(app.packageName)) {
                             if (current != null) refreshAppArtwork(current);
                             else loadApps();
                         }
@@ -9569,19 +9692,139 @@ public class LauncherActivity extends Activity {
         }
     }
 
-    /** Evict both artwork shapes and repaint only cells bound to this package. */
+    /** Evict both artwork shapes and repaint only cells bound to this identity. */
     private void refreshAppArtwork(AppInfo app) {
         if (app == null) return;
-        String packageName = app.packageName;
-        if (iconCache != null) iconCache.remove(packageName);
-        if (bannerCache != null) bannerCache.remove(packageName);
-        iconInflight.remove(packageName);
-        bannerInflight.remove(packageName);
+        String identity = app.packageName;
+        if (iconCache != null) iconCache.remove(identity);
+        if (bannerCache != null) bannerCache.remove(identity);
+        iconInflight.remove(identity);
+        bannerInflight.remove(identity);
         RecyclingShelfView currentShelf = shelf;
-        if (currentShelf != null) currentShelf.rebindAll();
+        if (currentShelf != null) currentShelf.refreshBanner(identity);
         AppDrawer currentDrawer = drawer;
-        if (currentDrawer != null) currentDrawer.rebindAttached();
+        if (currentDrawer != null) currentDrawer.refreshBanner(identity);
+        // Compact chip rows can hold the old custom image. Rebuild them on
+        // their next open; if one is currently visible, onIconLoaded replaces
+        // its matching bitmap after the fresh icon decode completes.
+        keymapPickerBuiltSize = -1;
+        keymapHideBuiltSize = -1;
         preWarmIcon(app);
+    }
+
+    private void showRenameDialog(AppInfo app, boolean fromDrawer, int focusHint) {
+        if (app == null) return;
+        EditText input = new EditText(this);
+        input.setSingleLine(true);
+        input.setSelectAllOnFocus(true);
+        input.setHint(R.string.rename_hint);
+        input.setContentDescription(getString(R.string.rename_hint));
+        input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
+        input.setFilters(new InputFilter[] {
+                new InputFilter.LengthFilter(CustomNameStore.MAX_NAME_CODE_POINTS * 2)
+        });
+        input.setText(app.label);
+        input.selectAll();
+
+        AlertDialog.Builder builder = new AlertDialog.Builder(this)
+                .setTitle(getString(R.string.rename_title, app.label))
+                .setView(input)
+                .setPositiveButton(R.string.rename_save, (dialog, which) ->
+                        applyCustomNameOverride(app, input.getText().toString(),
+                                fromDrawer, focusHint))
+                .setNegativeButton(android.R.string.cancel, (dialog, which) ->
+                        restoreCustomizationFocus(fromDrawer, app.packageName, focusHint));
+        if (customNames.containsKey(app.packageName)) {
+            builder.setNeutralButton(R.string.rename_reset, (dialog, which) ->
+                    applyCustomNameOverride(app, null, fromDrawer, focusHint));
+        }
+        AlertDialog dialog = builder.create();
+        renameDialog = dialog;
+        renameInput = input;
+        dialog.setOnCancelListener(ignored ->
+                restoreCustomizationFocus(fromDrawer, app.packageName, focusHint));
+        dialog.setOnDismissListener(ignored -> {
+            if (renameDialog == dialog) {
+                renameDialog = null;
+                renameInput = null;
+            }
+        });
+        dialog.setOnShowListener(ignored -> {
+            input.requestFocus();
+            Window window = dialog.getWindow();
+            if (window != null) {
+                window.setSoftInputMode(
+                        android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE);
+            }
+        });
+        dialog.show();
+    }
+
+    private void applyCustomNameOverride(AppInfo app, String requestedName,
+                                         boolean fromDrawer, int focusHint) {
+        if (app == null) return;
+        String name = CustomNameStore.sanitize(requestedName);
+        if (name != null && name.equals(app.sourceLabel)) name = null;
+        String previous = customNames.get(app.packageName);
+        boolean unchanged = previous == null ? name == null : previous.equals(name);
+        if (!unchanged) {
+            if (name == null) customNames.remove(app.packageName);
+            else customNames.put(app.packageName, name);
+            saveCustomNames();
+            app.setCustomLabel(name);
+
+            RecyclingShelfView currentShelf = shelf;
+            if (currentShelf != null) currentShelf.refreshLabel(app.packageName);
+            AppDrawer currentDrawer = drawer;
+            if (currentDrawer != null) currentDrawer.refreshLabel(app.packageName);
+            // The fallback TV-input tile draws its label inside the bitmap,
+            // so a rename must rebuild that tile as well as the text below it.
+            if (app.tvInputId != null) refreshAppArtwork(app);
+            keymapPickerBuiltSize = -1;
+            keymapHideBuiltSize = -1;
+            keymapRowsNeedEqualize = true;
+            rebuildOpenChipStripsAfterReconcile();
+            FrameLayout overlay = keymapOverlay;
+            if (overlay != null && overlay.getVisibility() == View.VISIBLE) {
+                refreshKeymapRows();
+            }
+        }
+        showToast(getString(name == null
+                ? R.string.toast_name_reset : R.string.toast_name_set,
+                app.label));
+        restoreCustomizationFocus(fromDrawer, app.packageName, focusHint);
+    }
+
+    private void restoreCustomizationFocus(boolean fromDrawer, String identity, int fallback) {
+        int target = visibleIndexOf(identity, fallback);
+        AppDrawer currentDrawer = drawer;
+        if (fromDrawer && currentDrawer != null
+                && currentDrawer.getVisibility() == View.VISIBLE) {
+            currentDrawer.post(() -> {
+                if (currentDrawer.getVisibility() == View.VISIBLE) {
+                    currentDrawer.requestFocusOnIndex(target, true);
+                }
+            });
+            return;
+        }
+        RecyclingShelfView currentShelf = shelf;
+        if (currentShelf != null && currentShelf.getVisibility() == View.VISIBLE) {
+            int homeTarget = Math.min(target, currentShelf.lastIndex());
+            currentShelf.post(() -> currentShelf.requestFocusOnIndex(homeTarget, true));
+        }
+    }
+
+    private int visibleIndexOf(String identity, int fallback) {
+        List<AppInfo> visible = buildVisibleList();
+        for (int i = 0, n = visible.size(); i < n; i++) {
+            if (visible.get(i).packageName.equals(identity)) return i;
+        }
+        return Math.max(0, Math.min(fallback, Math.max(0, visible.size() - 1)));
+    }
+
+    private boolean isArtworkTargetPresent(String identity) {
+        if (AppInfo.isTvInputIdentity(identity)) return findAppByPackage(identity) != null;
+        return isPackageInstalled(identity);
     }
 
     /** PackageManager is authoritative when the in-memory app list is rebuilding. */
@@ -9666,7 +9909,8 @@ public class LauncherActivity extends Activity {
                 hc,
                 prefs.getString(KEY_KEYMAP, ""),
                 prefs.getString(KEY_HIDDEN, ""),
-                clockMode);
+                clockMode,
+                prefs.getString(KEY_CUSTOM_NAMES, ""));
         try (java.io.OutputStream os = getContentResolver().openOutputStream(uri, "w")) {
             if (os == null) { showToast(getString(R.string.toast_backup_failed)); return; }
             os.write(text.getBytes(java.nio.charset.StandardCharsets.UTF_8));
@@ -9711,7 +9955,10 @@ public class LauncherActivity extends Activity {
         android.content.SharedPreferences.Editor ed = prefs.edit();
         if (p.has(SettingsBackup.K_APP_ORDER)) ed.putString(KEY_APP_ORDER, p.str(SettingsBackup.K_APP_ORDER));
         if (p.has(SettingsBackup.K_KEY_MAP))   ed.putString(KEY_KEYMAP,    p.str(SettingsBackup.K_KEY_MAP));
-        if (p.has(SettingsBackup.K_HIDDEN))    ed.putString(KEY_HIDDEN,    p.str(SettingsBackup.K_HIDDEN));
+        if (p.has(SettingsBackup.K_HIDDEN))      ed.putString(KEY_HIDDEN, p.str(SettingsBackup.K_HIDDEN));
+        if (p.has(SettingsBackup.K_CUSTOM_NAMES)) {
+            ed.putString(KEY_CUSTOM_NAMES, p.str(SettingsBackup.K_CUSTOM_NAMES));
+        }
         int hc = p.intVal(SettingsBackup.K_HOME_COUNT, -1);
         if (hc >= 1) ed.putInt(KEY_HOME_COUNT, hc);
         int cm = p.intVal(SettingsBackup.K_CLOCK_MODE, -1);
@@ -9725,6 +9972,17 @@ public class LauncherActivity extends Activity {
         // Reload in-memory state from the freshly-written prefs.
         loadKeyMap();
         loadHiddenApps();
+        loadCustomNames();
+        applyCustomNames(appList);
+        keymapPickerBuiltSize = -1;
+        keymapHideBuiltSize = -1;
+        keymapRowsNeedEqualize = true;
+        for (int i = 0, n = appList.size(); i < n; i++) {
+            AppInfo app = appList.get(i);
+            if (app.tvInputId == null) continue;
+            if (bannerCache != null) bannerCache.remove(app.packageName);
+            bannerInflight.remove(app.packageName);
+        }
         homeCount = (hc >= 1) ? hc : -1;   // -1 lets resolveHomeCount re-read / clamp
 
         // Re-order the live app list by the restored order and rebuild both
@@ -10663,6 +10921,7 @@ public class LauncherActivity extends Activity {
         // {@code getString} / {@code edit} site reuses one instance —
         // see the field's javadoc for the cumulative-savings rationale.
         prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
+        loadCustomNames();
         // {@link Context#getSystemService(String)} is documented to
         // return {@code null} when the named service does not exist.
         // {@code ACTIVITY_SERVICE} is a core Android service that

@@ -302,6 +302,14 @@ public class AppListCacheTest {
         assertEquals("App 199", out.get("com.app.199")[0]);
     }
 
+    @Test public void from_renamedInput_serializesSourceLabel() {
+        AppInfo input = AppInfo.tvInput("com.oem/.HdmiInputService/HW5", "HDMI 1");
+        input.setCustomLabel("Nintendo Switch");
+
+        AppListCache.Entry cached = AppListCache.from(input);
+        assertEquals("HDMI 1", cached.label());
+    }
+
     // ─── sanitiseLine direct tests ───────────────────────────────────────
 
     @Test public void sanitiseLine_null_emptyString() {

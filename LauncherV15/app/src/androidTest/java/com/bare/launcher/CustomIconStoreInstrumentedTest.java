@@ -1,20 +1,28 @@
 package com.bare.launcher;
 
+import static androidx.test.platform.app.InstrumentationRegistry.getInstrumentation;
+
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
+import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
+import android.net.Uri;
 
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.filters.SmallTest;
 
 import org.junit.Test;
 import org.junit.runner.RunWith;
+
+import java.io.File;
+import java.io.FileOutputStream;
 
 /** Device-level regression coverage for custom-icon bitmap normalization. */
 @RunWith(AndroidJUnit4.class)
@@ -72,6 +80,43 @@ public class CustomIconStoreInstrumentedTest {
             assertNull(CustomIconStore.normalizeForDisplay(source, 100));
         } finally {
             source.recycle();
+        }
+    }
+
+    @Test
+    public void tvInputIdentity_saveReadDelete_roundTrips() throws Exception {
+        Context context = getInstrumentation().getTargetContext();
+        String identity = "tvinput://test.oem/.HdmiInputService/HW99";
+        CustomIconStore store = new CustomIconStore(context);
+        File sourceFile = new File(context.getCacheDir(), "tv-input-icon-source.png");
+        Bitmap source = Bitmap.createBitmap(32, 32, Bitmap.Config.ARGB_8888);
+        source.eraseColor(Color.MAGENTA);
+        try {
+            try (FileOutputStream out = new FileOutputStream(sourceFile)) {
+                assertTrue(source.compress(Bitmap.CompressFormat.PNG, 100, out));
+            }
+            store.delete(identity);
+
+            assertTrue(store.save(context.getContentResolver(),
+                    Uri.fromFile(sourceFile), identity));
+            assertTrue(store.has(identity));
+            Bitmap stored = store.read(identity);
+            try {
+                assertNotNull(stored);
+                int pixel = stored.getPixel(0, 0);
+                assertTrue(Math.abs(Color.red(pixel) - Color.red(Color.MAGENTA)) <= 2);
+                assertTrue(Math.abs(Color.green(pixel) - Color.green(Color.MAGENTA)) <= 2);
+                assertTrue(Math.abs(Color.blue(pixel) - Color.blue(Color.MAGENTA)) <= 2);
+            } finally {
+                if (stored != null && !stored.isRecycled()) stored.recycle();
+            }
+            assertTrue(store.delete(identity));
+            assertFalse(store.has(identity));
+        } finally {
+            store.delete(identity);
+            source.recycle();
+            //noinspection ResultOfMethodCallIgnored
+            sourceFile.delete();
         }
     }
 

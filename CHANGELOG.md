@@ -7,14 +7,24 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
-## [2.2.1] — 2026-09-18
+## [2.3.0] — 2026-09-18
+
+### Added
+
+- **Custom names.** Rename any app or TV input locally from its long-press
+  menu, or reset it to the name supplied by Android or the TV. Names are
+  included in settings backups.
+- **Custom TV-input icons.** HDMI, AV, tuner, and other input tiles now
+  support Change icon and Reset icon just like installed apps.
 
 ### Fixed
 
 - **Custom icons now fill their intended area.** Landscape and portrait
   images are center-cropped instead of being placed inside a transparent
   square, and excess transparent padding around PNG artwork is trimmed.
-  This prevents selected icons from appearing tiny inside app tiles.
+- **The app drawer keeps control after choosing an icon.** Refreshing one
+  tile no longer rebinds the hidden favorites shelf and steals D-pad focus
+  while the drawer remains visible.
 
 ## [2.2.0] — 2026-06-26
 

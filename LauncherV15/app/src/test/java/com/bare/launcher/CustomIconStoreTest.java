@@ -56,6 +56,34 @@ public class CustomIconStoreTest {
         assertNull(CustomIconStore.centerCropBounds(512, 0));
     }
 
+    @Test public void fileStemForIdentity_realPackage_preservesExistingFilename() {
+        assertEquals("com.example.player",
+                CustomIconStore.fileStemForIdentity("com.example.player"));
+    }
+
+    @Test public void fileStemForIdentity_tvInput_isStableFlatAndSafe() {
+        String identity = "tvinput://com.oem/.HdmiInputService/HW5";
+        String first = CustomIconStore.fileStemForIdentity(identity);
+        String second = CustomIconStore.fileStemForIdentity(identity);
+
+        assertEquals(first, second);
+        assertTrue(first.startsWith("@tvinput_"));
+        assertFalse(first.contains("/"));
+        assertFalse(first.contains(":"));
+    }
+
+    @Test public void fileStemForIdentity_distinctInputs_doNotCollide() {
+        String hdmiOne = CustomIconStore.fileStemForIdentity("tvinput://oem/HW1");
+        String hdmiTwo = CustomIconStore.fileStemForIdentity("tvinput://oem/HW2");
+
+        assertFalse(hdmiOne.equals(hdmiTwo));
+    }
+
+    @Test public void fileStemForIdentity_invalidSyntheticIdentity_returnsNull() {
+        assertNull(CustomIconStore.fileStemForIdentity("tvinput://"));
+        assertNull(CustomIconStore.fileStemForIdentity("../outside"));
+    }
+
     @Test public void isSafePackageName_acceptsAndroidIdentifiers() {
         assertTrue(CustomIconStore.isSafePackageName("com.example.tv_launcher2"));
         assertTrue(CustomIconStore.isSafePackageName("org.videolan.vlc"));
