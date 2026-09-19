@@ -7,6 +7,16 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+## [2.3.1] — 2026-09-19
+
+### Fixed
+
+- **Custom artwork keeps its real shape and fills the tile correctly.**
+  Selected images are no longer converted into square source bitmaps.
+  Transparent logos keep their alpha outline and render at nearly the full
+  tile height without a white or square plate. Opaque images render
+  edge-to-edge across the 5:3 tile with rounded tile corners.
+
 ## [2.3.0] — 2026-09-18
 
 ### Added

@@ -434,8 +434,12 @@ android {
         // use custom artwork, apps and inputs can have local display names,
         // and picker-return artwork refreshes preserve drawer focus.
         // SemVer MINOR — additive customization with scoped bug fixes.
-        versionCode   = 31
-        versionName   = "2.3.0"
+        // Bumped 31 → 32: 2.3.1 preserves each selected image's aspect and
+        // alpha shape, renders transparent logos without a square plate, and
+        // uses opaque custom art edge-to-edge across the full 5:3 tile.
+        // SemVer PATCH — fixes custom-artwork presentation only.
+        versionCode   = 32
+        versionName   = "2.3.1"
         resourceConfigurations += listOf("en")
 
         // Instrumentation test runner. Required so :app:connectedDebugAndroidTest

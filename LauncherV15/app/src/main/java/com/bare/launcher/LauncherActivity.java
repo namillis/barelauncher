@@ -24,7 +24,6 @@ import android.graphics.RectF;
 import android.graphics.RenderEffect;
 import android.graphics.Shader;
 import android.graphics.Typeface;
-import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.Drawable;
 import android.net.Uri;
 import android.os.Build;
@@ -9265,8 +9264,7 @@ public class LauncherActivity extends Activity {
             Bitmap custom = customStore.read(app.packageName);
             if (custom != null) {
                 try {
-                    Drawable drawable = new BitmapDrawable(getResources(), custom);
-                    return IconRenderer.process(drawable, iconPx);
+                    return IconRenderer.processCustomIcon(custom, iconPx);
                 } finally {
                     if (!custom.isRecycled()) custom.recycle();
                 }
@@ -9402,8 +9400,7 @@ public class LauncherActivity extends Activity {
             Bitmap custom = customStore.read(app.packageName);
             if (custom != null) {
                 try {
-                    Drawable drawable = new BitmapDrawable(getResources(), custom);
-                    return IconRenderer.generateBannerTile(drawable, w, h, corner);
+                    return IconRenderer.generateCustomTile(custom, w, h, corner);
                 } finally {
                     if (!custom.isRecycled()) custom.recycle();
                 }
