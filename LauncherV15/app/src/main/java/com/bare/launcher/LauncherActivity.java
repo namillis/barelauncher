@@ -25,6 +25,7 @@ import android.graphics.RenderEffect;
 import android.graphics.Shader;
 import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
+import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -167,7 +168,7 @@ public class LauncherActivity extends Activity {
     // No vertical lift (saves a frame of layout work and removes a class of
     // visual jitter on slow TV ROMs). Scale is small enough to read as
     // "selected" without dominating the shelf.
-    private static final float  FOCUS_SCALE    = 1.06f;
+    private static final float  FOCUS_SCALE    = 1.07f;
     // Toolbar pill (network / mapper / wallpaper) focus pop. Smaller than
     // FOCUS_SCALE because the toolbar plates are themselves smaller — at
     // 1.06× the pop read as too aggressive against a 40 dp box. 1.04 is
@@ -277,6 +278,7 @@ public class LauncherActivity extends Activity {
     private boolean            wifiConnected = false;
     private android.net.ConnectivityManager connMgr = null;
     private android.net.ConnectivityManager.NetworkCallback netCallback = null;
+    private FavoritesBlurView   favoritesBlurLayer;
     private RingView           ringView;
     private FrameLayout        root;
     private Toast              currentToast;
@@ -1441,6 +1443,8 @@ public class LauncherActivity extends Activity {
     private void setHomeChromeVisible(boolean visible) {
         View nb = netBtn;        if (nb != null) nb.setVisibility(visible ? View.VISIBLE : View.INVISIBLE);
         View mb = mapperBtnView; if (mb != null) mb.setVisibility(visible ? View.VISIBLE : View.INVISIBLE);
+        FavoritesBlurView blur = favoritesBlurLayer;
+        if (blur != null) blur.setVisibility(visible ? View.VISIBLE : View.INVISIBLE);
         TextView cv = clockView;
         if (cv != null) cv.setVisibility(visible ? (showClock ? View.VISIBLE : View.GONE) : View.INVISIBLE);
     }
@@ -1909,7 +1913,7 @@ public class LauncherActivity extends Activity {
         if (wallpaperCtl != null) { wallpaperCtl.releaseBitmaps(); wallpaperCtl = null; }
         wallpaperFront = null; wallpaperBack = null; clockView = null; shelf = null;
         drawer = null;
-        netBtn = null; ringView = null; root = null;
+        netBtn = null; favoritesBlurLayer = null; ringView = null; root = null;
         mapperBtnView = null;
         settingsOverlay = null; settingsCard = null; settingsColumn = null;
         folderPickerOverlay = null; folderPickerCard = null; folderPickerCol = null; folderPickerScroll = null;
@@ -2175,11 +2179,35 @@ public class LauncherActivity extends Activity {
         // snapshot pre-painted) — no second decode, no flicker.
         wallpaperCtl.loadSnapshotSync();
 
+        final int favoritesMarginH = dp(32);
+        final int favoritesBottom = dp(18);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            favoritesBlurLayer = new FavoritesBlurView(
+                    this,
+                    favoritesMarginH,
+                    Math.max(0, screenH - favoritesBottom - cellHpx));
+            FrameLayout.LayoutParams blurLp = new FrameLayout.LayoutParams(MATCH, cellHpx);
+            blurLp.gravity = Gravity.BOTTOM;
+            blurLp.setMargins(favoritesMarginH, 0, favoritesMarginH, favoritesBottom);
+            favoritesBlurLayer.setLayoutParams(blurLp);
+            root.addView(favoritesBlurLayer);
+            wallpaperCtl.setFrameInvalidator(() -> {
+                FavoritesBlurView layer = favoritesBlurLayer;
+                if (layer != null) layer.invalidate();
+            });
+        }
+
         shelf = new RecyclingShelfView(this);
+        shelf.setId(R.id.favorites_bar);
         FrameLayout.LayoutParams shelfLp = new FrameLayout.LayoutParams(MATCH, cellHpx);
         shelfLp.gravity = Gravity.BOTTOM;
-        shelfLp.setMargins(0, 0, 0, dp(12));
+        shelfLp.setMargins(favoritesMarginH, 0, favoritesMarginH, favoritesBottom);
         shelf.setLayoutParams(shelfLp);
+        GradientDrawable favoritesPlate = new GradientDrawable();
+        favoritesPlate.setColor(0xA6141920);
+        favoritesPlate.setCornerRadius(Math.round(bannerHpx * 0.22f));
+        favoritesPlate.setStroke(Math.max(1, dp(1)), 0x33FFFFFF);
+        shelf.setBackground(favoritesPlate);
         shelf.setContentDescription(getString(R.string.cd_app_shelf));
         shelf.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_YES);
         root.addView(shelf);
@@ -2334,26 +2362,19 @@ public class LauncherActivity extends Activity {
         // (added last, on first reorder) stays above everything including the
         // ring, exactly as on the home shelf.
         drawer = new AppDrawer(this);
+        drawer.setId(R.id.at4k_home_grid);
         drawer.setLayoutParams(new FrameLayout.LayoutParams(MATCH, MATCH));
         drawer.setVisibility(View.GONE);
         drawer.setContentDescription(getString(R.string.cd_app_drawer));
         drawer.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_YES);
         root.addView(drawer);
 
-        int strokePx = dp(RING_STROKE_DP);
-        // Selection ring wraps the banner tile (landscape rounded
-        // rect). Box = banner + headroom for the focus scale-up.
-        int bw = tileWpx, bh = bannerHpx;
-        int ringBoxW = bw + dp(12), ringBoxH = bh + dp(12);
-        ringLayoutW    = ringBoxW;
-        ringLayoutH    = ringBoxH;
-        cachedIcyOffset = bh / 2f;  // banner centred at top of the cell
-        ringView = new RingView(this, strokePx, bw, bh, tileCornerPx);
-        FrameLayout.LayoutParams ringLp = new FrameLayout.LayoutParams(ringBoxW, ringBoxH);
-        ringView.setLayoutParams(ringLp);
-        ringView.setVisibility(View.INVISIBLE);
-        ringView.setContentDescription(getString(R.string.cd_selection_ring));
-        root.addView(ringView);
+        // Focus is communicated exclusively by the 1.07x card expansion.
+        // Do not create a ring/outline view for either favorites or the grid.
+        cachedIcyOffset = bannerHpx / 2f;
+        ringLayoutW = 0;
+        ringLayoutH = 0;
+        ringView = null;
 
         // The reorder-mode context menu overlay (~10 views, 3 paint
         // backgrounds, 3 click listeners) is built lazily on first
@@ -3153,6 +3174,61 @@ public class LauncherActivity extends Activity {
         } catch (Exception e) {
             return false;
         }
+    }
+
+    /** Draws only the wallpaper pixels behind the favorites plate, then lets
+     *  RenderEffect blur that small surface. App cards are separate child
+     *  views above it, so their artwork remains sharp and undarkened. */
+    @android.annotation.SuppressLint("NewApi")
+    private final class FavoritesBlurView extends View {
+        private final float sourceLeft;
+        private final float sourceTop;
+        private final float cornerRadius;
+
+        FavoritesBlurView(Context context, float sourceLeft, float sourceTop) {
+            super(context);
+            this.sourceLeft = sourceLeft;
+            this.sourceTop = sourceTop;
+            this.cornerRadius = Math.round(bannerHpx * 0.22f);
+            setWillNotDraw(false);
+            setClipToOutline(true);
+            setOutlineProvider(new ViewOutlineProvider() {
+                @Override public void getOutline(View view, Outline outline) {
+                    int width = view.getWidth();
+                    int height = view.getHeight();
+                    if (width <= 0 || height <= 0) outline.setEmpty();
+                    else outline.setRoundRect(0, 0, width, height, cornerRadius);
+                }
+            });
+            float blur = dp(18);
+            setRenderEffect(RenderEffect.createBlurEffect(blur, blur, Shader.TileMode.CLAMP));
+        }
+
+        @Override protected void onDraw(Canvas canvas) {
+            drawWallpaperSource(canvas, wallpaperBack);
+            drawWallpaperSource(canvas, wallpaperFront);
+        }
+
+        private void drawWallpaperSource(Canvas canvas, ImageView source) {
+            if (source == null || source.getAlpha() <= 0f) return;
+            Drawable drawable = source.getDrawable();
+            if (drawable == null) return;
+            int originalAlpha = drawable.getAlpha();
+            int compositeAlpha = Math.round(originalAlpha * source.getAlpha());
+            if (compositeAlpha <= 0) return;
+            int save = canvas.save();
+            try {
+                canvas.translate(-sourceLeft, -sourceTop);
+                canvas.concat(source.getImageMatrix());
+                drawable.setAlpha(compositeAlpha);
+                drawable.draw(canvas);
+            } finally {
+                drawable.setAlpha(originalAlpha);
+                canvas.restoreToCount(save);
+            }
+        }
+
+        @Override public boolean hasOverlappingRendering() { return false; }
     }
 
     final class RecyclingShelfView extends ViewGroup implements ReorderHost {
@@ -4480,12 +4556,9 @@ public class LauncherActivity extends Activity {
                 // staying put. Suppressing the label the same way the ring
                 // is suppressed -- for the identical window, using the
                 // identical flag -- closes this the same way.
-                boolean showLabel = (!labelDisplay.isEmpty()) &&
-                        ((isFocused() && !reorderMode && !rebuildingApps) || isDragTarget);
-                if (showLabel) {
-                    float labelY = icy + labelOffsetY;
-                    if (labelY < h) canvas.drawText(labelDisplay, cx, labelY, labelPaint);
-                }
+                // The bottom favorites bar is intentionally label-free so the
+                // wallpaper remains the dominant default-home surface. The
+                // selected app name appears only after entering the lower grid.
             }
 
             private void drawIcon(Canvas canvas, float cx, float icy) {
@@ -5612,7 +5685,8 @@ public class LauncherActivity extends Activity {
                 // label on the wrong cell for a frame even though the ring
                 // itself is correctly suppressed. See RecyclingShelfView's
                 // rebuildingApps for the full history.
-                boolean showLabel = (!labelDisplay.isEmpty())
+                boolean showLabel = At4kHomeLayout.shouldShowLabel(boundIndex, hc())
+                        && !labelDisplay.isEmpty()
                         && ((isFocused() && !reorderMode && !rebuildingApps) || isDragTarget);
                 if (showLabel) {
                     float labelY = icy + labelOffsetY;
@@ -11143,28 +11217,22 @@ public class LauncherActivity extends Activity {
 
     private int dp(int v) { return Math.round(v * density); }
 
-    /** Compute the banner-tile pixel dimensions from the current
-     *  screen width so exactly 6 tiles fit per row on any TV. Called at
-     *  startup (before {@link #buildLayout}) and on configuration change.
-     *  The tile is 5:3 (landscape 400x240-ish); the corner is ~20% of the height
-     *  (slightly more rounded per user request), capped so tiles don't get
-     *  huge on very wide panels. */
+    /** Compute six 3:2 tvOS-style app cards for both the favorites shelf and
+     *  the lower grid. The focused card scales without an outline. */
     private void computeTileDims() {
         int sidePad = dp(12);
         int avail   = Math.max(0, screenW - dp(24) * 2);
-        int stride  = avail > 0 ? avail / 6 : dp(150);
+        int stride  = avail > 0 ? avail / At4kHomeLayout.COLUMNS : dp(150);
         int cw = stride - sidePad * 2;
         int capW = dp(156), minW = dp(64);
         if (cw > capW) cw = capW;
-        // v1.5.x: shrink the banner tiles slightly (~8%) for a tighter grid
-        // with more breathing room between tiles, per user request. Pure
-        // layout math evaluated once per config change — zero per-frame cost.
         cw = Math.round(cw * 0.92f);
         if (cw < minW) cw = minW;
+        At4kHomeLayout.Metrics metrics = At4kHomeLayout.calculate(screenW, screenH, density);
         tileWpx      = cw;
-        bannerHpx    = Math.round(cw * 3f / 5f);        // 5:3
-        tileCornerPx = Math.round(bannerHpx * 0.20f);   // slightly more rounded
-        cellHpx      = bannerHpx + dp(28);              // banner + focused-label area
+        bannerHpx    = Math.round(cw * 2f / 3f);
+        tileCornerPx = Math.max(metrics.tileCornerPx, Math.round(bannerHpx * 0.20f));
+        cellHpx      = bannerHpx + dp(28);
     }
 
     /** Clip a small list/chip {@link ImageView} to a circle so the shared

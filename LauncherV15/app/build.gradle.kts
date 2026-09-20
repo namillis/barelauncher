@@ -11,7 +11,7 @@ android {
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.bare.launcher"
+        applicationId = "com.bare.launcher.at4k"
         minSdk        = 26
         // targetSdk = 36 to opt into Android 16 platform behaviours (and to
         // satisfy Play Store's evergreen target-API requirements). The
@@ -437,9 +437,13 @@ android {
         // Bumped 31 → 32: 2.3.1 preserves each selected image's aspect and
         // alpha shape, renders transparent logos without a square plate, and
         // uses opaque custom art edge-to-edge across the full 5:3 tile.
-        // SemVer PATCH — fixes custom-artwork presentation only.
-        versionCode   = 32
-        versionName   = "2.3.1"
+        // Bumped 32 → 33: 2.3.2 adds scale-only tvOS focus, rounder cards,
+        // and wallpaper-only blur below the favorites boundary.
+        // Bumped 33 → 34: 2.3.3 restores the wallpaper-first bottom favorites
+        // home, uses 3:2 cards, and limits app-name labels to the lower grid.
+        // SemVer PATCH — corrects launcher presentation regressions.
+        versionCode   = 34
+        versionName   = "2.3.3"
         resourceConfigurations += listOf("en")
 
         // Instrumentation test runner. Required so :app:connectedDebugAndroidTest

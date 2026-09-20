@@ -138,6 +138,8 @@ final class WallpaperController {
     private volatile int     screenW;
     private volatile int     screenH;
     private volatile boolean destroyed;
+    /** Invalidates the plate-sized frosted copy when wallpaper pixels change. */
+    private Runnable frameInvalidator;
 
     /** Set true by {@link #loadSnapshotSync()} when the on-disk snapshot
      *  was successfully rendered into FRONT. {@link #loadStored()} reads
@@ -246,6 +248,18 @@ final class WallpaperController {
         this.executor.allowCoreThreadTimeOut(true);
     }
 
+    /** Keep a local wallpaper-effect view synchronized without coupling this
+     *  controller to the launcher's view hierarchy. */
+    void setFrameInvalidator(Runnable invalidator) {
+        frameInvalidator = invalidator;
+        invalidateFrostedFrame();
+    }
+
+    private void invalidateFrostedFrame() {
+        Runnable invalidator = frameInvalidator;
+        if (invalidator != null) invalidator.run();
+    }
+
     /** Refresh cached display metrics after a configuration change (HDMI
      *  swap, font scale, multi-window). Cheap; just stores the values. */
     void onConfigurationChanged(int newScreenW, int newScreenH) {
@@ -309,6 +323,7 @@ final class WallpaperController {
         if (bmp == null) return false;
         front.setImageBitmap(bmp);
         front.setAlpha(1f);
+        invalidateFrostedFrame();
         snapshotPrePainted = true;
         return true;
     }
@@ -527,6 +542,8 @@ final class WallpaperController {
         recycleImageViewBitmap(back);
         if (front != null) front.setImageDrawable(null);
         if (back  != null) back .setImageDrawable(null);
+        invalidateFrostedFrame();
+        frameInvalidator = null;
     }
 
     // ── Internals ─────────────────────────────────────────────────────────
@@ -550,6 +567,7 @@ final class WallpaperController {
         if (coldStart) {
             front.setImageBitmap(fb);
             front.setAlpha(1f);
+            invalidateFrostedFrame();
             return;
         }
         // Cancel any in-flight fade so rapid wallpaper changes don't leave
@@ -591,10 +609,12 @@ final class WallpaperController {
         }
         back.setImageBitmap(fb);
         back.setAlpha(1f);
+        invalidateFrostedFrame();
         front.animate()
                 .alpha(0f)
                 .setDuration(200)
                 .setInterpolator(fadeEase)
+                .setUpdateListener(animation -> invalidateFrostedFrame())
                 .withEndAction(() -> {
                     if (destroyed) return;
                     // Promote the new bitmap up to FRONT. Role/z-order
@@ -603,6 +623,8 @@ final class WallpaperController {
                     front.setAlpha(1f);
                     back.setImageDrawable(null);
                     back.setAlpha(1f);
+                    front.animate().setUpdateListener(null);
+                    invalidateFrostedFrame();
                     // Defer the recycle to the next animation frame so
                     // FRONT's display list has already been rebuilt with
                     // {@code fb} before the previous bitmap's pixels are

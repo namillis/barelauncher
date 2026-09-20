@@ -1,0 +1,76 @@
+package com.bare.launcher;
+
+/* loaded from: classes2.dex */
+final class At4kHomeLayout {
+    private static final float BOTTOM_PADDING_FRACTION = 0.06f;
+    static final int COLUMNS = 6;
+    private static final float COLUMN_GAP_FRACTION = 0.0229f;
+    private static final float FAVORITES_PLATE_MARGIN_FRACTION = 0.033f;
+    private static final float FAVORITES_PLATE_PADDING_FRACTION = 0.038f;
+    private static final float GRID_HORIZONTAL_MARGIN_FRACTION = 0.05625f;
+    private static final float GRID_TOP_FRACTION = 0.205f;
+    private static final float LABEL_AREA_FRACTION = 0.04f;
+    private static final float ROW_GAP_FRACTION = 0.092f;
+    private static final float TILE_CORNER_FRACTION = 0.16f;
+
+    private At4kHomeLayout() {
+    }
+
+    static Metrics calculate(int screenWidthPx, int screenHeightPx, float density) {
+        if (screenWidthPx <= 0) {
+            throw new IllegalArgumentException("screenWidthPx must be positive");
+        }
+        if (screenHeightPx <= 0) {
+            throw new IllegalArgumentException("screenHeightPx must be positive");
+        }
+        if (density <= 0.0f || !Float.isFinite(density)) {
+            throw new IllegalArgumentException("density must be finite and positive");
+        }
+        int gridHorizontalMarginPx = Math.max(dp(24, density), Math.round(screenWidthPx * GRID_HORIZONTAL_MARGIN_FRACTION));
+        int columnGapPx = Math.max(dp(12, density), Math.round(screenWidthPx * COLUMN_GAP_FRACTION));
+        int tileWidthPx = Math.max(dp(64, density), ((screenWidthPx - (gridHorizontalMarginPx * 2)) - (columnGapPx * 5)) / COLUMNS);
+        int tileHeightPx = Math.round((tileWidthPx * 2.0f) / 3.0f);
+        int labelAreaPx = Math.max(dp(28, density), Math.round(screenHeightPx * LABEL_AREA_FRACTION));
+        return new Metrics(gridHorizontalMarginPx, columnGapPx, tileWidthPx, tileHeightPx, Math.round(tileHeightPx * TILE_CORNER_FRACTION), tileHeightPx + labelAreaPx, Math.max(dp(72, density), Math.round(screenHeightPx * GRID_TOP_FRACTION)), Math.max(dp(24, density), Math.round(screenHeightPx * ROW_GAP_FRACTION)), Math.max(dp(24, density), Math.round(screenWidthPx * FAVORITES_PLATE_MARGIN_FRACTION)), Math.max(dp(12, density), Math.round(screenHeightPx * FAVORITES_PLATE_PADDING_FRACTION)), Math.max(dp(48, density), Math.round(screenHeightPx * BOTTOM_PADDING_FRACTION)));
+    }
+
+    static boolean shouldBlurBackground(int focusedIndex, int favoritesCount) {
+        return focusedIndex >= Math.max(0, favoritesCount);
+    }
+
+    static boolean shouldShowLabel(int focusedIndex, int favoritesCount) {
+        return focusedIndex >= Math.max(0, favoritesCount);
+    }
+
+    private static int dp(int value, float density) {
+        return Math.round(value * density);
+    }
+
+    static final class Metrics {
+        final int bottomPaddingPx;
+        final int cellHeightPx;
+        final int columnGapPx;
+        final int favoritesPlateHorizontalMarginPx;
+        final int favoritesPlateVerticalPaddingPx;
+        final int gridHorizontalMarginPx;
+        final int gridTopPx;
+        final int rowGapPx;
+        final int tileCornerPx;
+        final int tileHeightPx;
+        final int tileWidthPx;
+
+        Metrics(int gridHorizontalMarginPx, int columnGapPx, int tileWidthPx, int tileHeightPx, int tileCornerPx, int cellHeightPx, int gridTopPx, int rowGapPx, int favoritesPlateHorizontalMarginPx, int favoritesPlateVerticalPaddingPx, int bottomPaddingPx) {
+            this.gridHorizontalMarginPx = gridHorizontalMarginPx;
+            this.columnGapPx = columnGapPx;
+            this.tileWidthPx = tileWidthPx;
+            this.tileHeightPx = tileHeightPx;
+            this.tileCornerPx = tileCornerPx;
+            this.cellHeightPx = cellHeightPx;
+            this.gridTopPx = gridTopPx;
+            this.rowGapPx = rowGapPx;
+            this.favoritesPlateHorizontalMarginPx = favoritesPlateHorizontalMarginPx;
+            this.favoritesPlateVerticalPaddingPx = favoritesPlateVerticalPaddingPx;
+            this.bottomPaddingPx = bottomPaddingPx;
+        }
+    }
+}
