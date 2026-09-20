@@ -442,8 +442,11 @@ android {
         // Bumped 33 → 34: 2.3.3 restores the wallpaper-first bottom favorites
         // home, uses 3:2 cards, and limits app-name labels to the lower grid.
         // SemVer PATCH — corrects launcher presentation regressions.
-        versionCode   = 34
-        versionName   = "2.3.3"
+        // Bumped 34 → 35: 2.3.4 vertically centers 3:2 favorite cards
+        // within the bottom glass bar after labels were removed.
+        // SemVer PATCH — layout alignment only.
+        versionCode   = 35
+        versionName   = "2.3.4"
         resourceConfigurations += listOf("en")
 
         // Instrumentation test runner. Required so :app:connectedDebugAndroidTest

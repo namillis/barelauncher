@@ -42,6 +42,13 @@ final class At4kHomeLayout {
         return focusedIndex >= Math.max(0, favoritesCount);
     }
 
+    static int centeredTop(int containerHeightPx, int contentHeightPx) {
+        if (containerHeightPx < 0 || contentHeightPx < 0) {
+            throw new IllegalArgumentException("heights must be non-negative");
+        }
+        return Math.max(0, (containerHeightPx - contentHeightPx) / 2);
+    }
+
     private static int dp(int value, float density) {
         return Math.round(value * density);
     }

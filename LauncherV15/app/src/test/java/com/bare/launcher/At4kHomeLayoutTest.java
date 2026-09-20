@@ -16,6 +16,12 @@ public class At4kHomeLayoutTest {
     }
 
     @Test
+    public void favoritesCardIsVerticallyCenteredInsideBarCell() {
+        assertEquals(14, At4kHomeLayout.centeredTop(188, 160));
+        assertEquals(0, At4kHomeLayout.centeredTop(160, 160));
+    }
+
+    @Test
     public void labelsAppearOnlyBelowFavoritesBoundary() {
         assertFalse(At4kHomeLayout.shouldShowLabel(0, 6));
         assertFalse(At4kHomeLayout.shouldShowLabel(5, 6));

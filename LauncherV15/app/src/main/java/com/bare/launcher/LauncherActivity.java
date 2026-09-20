@@ -4201,7 +4201,9 @@ public class LauncherActivity extends Activity {
                 phStroke       = dp(1);
                 labelOffsetY   = bannerH / 2f + dp(16);  // label below the banner
                 labelMaxWInset = dp(6);
-                icyOffset      = bannerH / 2f;  // banner centred at the cell top — ring aligns to this
+                icyOffset      = At4kHomeLayout.centeredTop(cellH, bannerH) + bannerH / 2f;
+                // Favorites do not draw labels, so center the 3:2 card within
+                // the whole bar cell instead of reserving label space below it.
 
                 phRing = new Paint(Paint.ANTI_ALIAS_FLAG);
                 phRing.setStyle(Paint.Style.STROKE);
