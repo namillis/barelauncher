@@ -2,6 +2,7 @@ package com.bare.launcher;
 
 import static androidx.test.platform.app.InstrumentationRegistry.getInstrumentation;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
@@ -52,6 +53,26 @@ import org.junit.runner.RunWith;
 @RunWith(AndroidJUnit4.class)
 @LargeTest
 public class LauncherSmokeTest {
+
+    @Test
+    public void defaultHome_showsBottomFavoritesAndHidesGrid() {
+        try (ActivityScenario<LauncherActivity> scenario =
+                     ActivityScenario.launch(LauncherActivity.class)) {
+            getInstrumentation().waitForIdleSync();
+
+            scenario.onActivity(a -> {
+                View root = a.findViewById(android.R.id.content);
+                View favorites = a.findViewById(R.id.favorites_bar);
+                View grid = a.findViewById(R.id.at4k_home_grid);
+
+                assertNotNull("favorites bar present", favorites);
+                assertNotNull("lower app grid present", grid);
+                assertEquals("favorites visible by default", View.VISIBLE, favorites.getVisibility());
+                assertEquals("lower grid hidden by default", View.GONE, grid.getVisibility());
+                assertTrue("favorites bar stays in lower half", favorites.getTop() > root.getHeight() / 2);
+            });
+        }
+    }
 
     @Test
     public void boots_andHasContentView() {

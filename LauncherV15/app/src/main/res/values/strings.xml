@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Bare Launcher</string>
+    <string name="app_name">Bare Launcher AT4K</string>
 
     <!-- Accessibility / TalkBack content descriptions for non-text UI -->
     <string name="cd_app_shelf">App shelf</string>
@@ -14,7 +14,6 @@
          inside the panel and TalkBack reads each row's visible label
          directly (no separate contentDescription needed). -->
     <string name="cd_settings">Settings</string>
-    <string name="cd_selection_ring">Selection ring</string>
     <string name="cd_uninstall_app">Uninstall app</string>
     <string name="cd_open_app_info">Open app info in system settings</string>
     <string name="cd_move_app_position">Move app position</string>
@@ -71,7 +70,7 @@
 
     <!-- About card (v1.4.9). Version is filled in at runtime from the
          installed package, so it always matches the actual app version. -->
-    <string name="about_app_name">BareLauncher</string>
+    <string name="about_app_name">Bare Launcher AT4K</string>
     <string name="about_kofi">Support me on Ko-fi</string>
     <!-- %1$s is the Downloader app code for the latest release APK. -->
     <string name="about_downloader_code">Downloader code:  %1$s</string>

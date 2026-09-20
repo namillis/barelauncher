@@ -11,7 +11,7 @@ android {
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.bare.launcher"
+        applicationId = "com.bare.launcher.at4k"
         minSdk        = 26
         // targetSdk = 36 to opt into Android 16 platform behaviours (and to
         // satisfy Play Store's evergreen target-API requirements). The
@@ -437,9 +437,24 @@ android {
         // Bumped 31 → 32: 2.3.1 preserves each selected image's aspect and
         // alpha shape, renders transparent logos without a square plate, and
         // uses opaque custom art edge-to-edge across the full 5:3 tile.
-        // SemVer PATCH — fixes custom-artwork presentation only.
-        versionCode   = 32
-        versionName   = "2.3.1"
+        // Bumped 32 → 33: 2.3.2 adds scale-only tvOS focus, rounder cards,
+        // and wallpaper-only blur below the favorites boundary.
+        // Bumped 33 → 34: 2.3.3 restores the wallpaper-first bottom favorites
+        // home, uses 3:2 cards, and limits app-name labels to the lower grid.
+        // SemVer PATCH — corrects launcher presentation regressions.
+        // Bumped 34 → 35: 2.3.4 vertically centers 3:2 favorite cards
+        // within the bottom glass bar after labels were removed.
+        // SemVer PATCH — layout alignment only.
+        // Bumped 35 → 36: 2.3.5 replaces the API 26-30 dark-only grid
+        // fallback with a cached, downsampled wallpaper blur and lightens
+        // the modern grid tint so hardware blur remains visible.
+        // SemVer PATCH — restores intended visual behavior across Android versions.
+        // Bumped 36 → 37: 2.3.6 smooths the API 26-30 wallpaper blur with
+        // a 160×90 preview and three radius-3 box passes that approximate a
+        // Gaussian kernel without adding a runtime dependency.
+        // SemVer PATCH — visual refinement of the legacy blur path.
+        versionCode   = 37
+        versionName   = "2.3.6"
         resourceConfigurations += listOf("en")
 
         // Instrumentation test runner. Required so :app:connectedDebugAndroidTest
