@@ -1482,8 +1482,8 @@ public class LauncherActivity extends Activity {
                 legacyGridBlurCapturePending = false;
                 return;
             }
-            int previewW = Math.max(96, screenW / 16);
-            int previewH = Math.max(54, screenH / 16);
+            int previewW = Math.max(120, screenW / 12);
+            int previewH = Math.max(68, screenH / 12);
             Bitmap preview;
             try {
                 preview = Bitmap.createBitmap(previewW, previewH,
@@ -1502,7 +1502,7 @@ public class LauncherActivity extends Activity {
                                 return;
                             }
                             if (result == PixelCopy.SUCCESS) {
-                                LegacyGridBlur.apply(preview, 2);
+                                LegacyGridBlur.apply(preview, 3, 3);
                                 Bitmap old = legacyGridBlurBitmap;
                                 legacyGridBlurBitmap = preview;
                                 legacyGridBlurDirty = false;

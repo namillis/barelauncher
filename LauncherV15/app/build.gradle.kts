@@ -449,8 +449,12 @@ android {
         // fallback with a cached, downsampled wallpaper blur and lightens
         // the modern grid tint so hardware blur remains visible.
         // SemVer PATCH — restores intended visual behavior across Android versions.
-        versionCode   = 36
-        versionName   = "2.3.5"
+        // Bumped 36 → 37: 2.3.6 smooths the API 26-30 wallpaper blur with
+        // a 160×90 preview and three radius-3 box passes that approximate a
+        // Gaussian kernel without adding a runtime dependency.
+        // SemVer PATCH — visual refinement of the legacy blur path.
+        versionCode   = 37
+        versionName   = "2.3.6"
         resourceConfigurations += listOf("en")
 
         // Instrumentation test runner. Required so :app:connectedDebugAndroidTest

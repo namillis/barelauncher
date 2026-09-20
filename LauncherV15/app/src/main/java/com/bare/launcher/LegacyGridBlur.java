@@ -2,22 +2,34 @@ package com.bare.launcher;
 
 import android.graphics.Bitmap;
 
-/** Small box blur for the legacy grid preview. The caller downsamples first. */
+/** Repeated box blur for the legacy grid preview. Three passes approximate
+ *  a Gaussian kernel after the caller downsamples the wallpaper. */
 final class LegacyGridBlur {
     private LegacyGridBlur() {}
 
-    static Bitmap apply(Bitmap bitmap, int radius) {
-        if (bitmap == null || radius <= 0) return bitmap;
+    static Bitmap apply(Bitmap bitmap, int radius, int passes) {
+        if (bitmap == null || radius <= 0 || passes <= 0) return bitmap;
         int width = bitmap.getWidth();
         int height = bitmap.getHeight();
         int[] pixels = new int[width * height];
         bitmap.getPixels(pixels, 0, width, 0, 0, width, height);
-        blurArgb(pixels, width, height, radius);
+        blurArgb(pixels, width, height, radius, passes);
         bitmap.setPixels(pixels, 0, width, 0, 0, width, height);
         return bitmap;
     }
 
     static void blurArgb(int[] pixels, int width, int height, int radius) {
+        blurArgb(pixels, width, height, radius, 1);
+    }
+
+    static void blurArgb(int[] pixels, int width, int height, int radius, int passes) {
+        if (passes <= 0) return;
+        for (int pass = 0; pass < passes; pass++) {
+            blurSinglePass(pixels, width, height, radius);
+        }
+    }
+
+    private static void blurSinglePass(int[] pixels, int width, int height, int radius) {
         if (pixels == null || width <= 0 || height <= 0
                 || pixels.length < width * height || radius <= 0) return;
 
