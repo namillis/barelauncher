@@ -44,6 +44,7 @@ import android.util.SparseArray;
 import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
+import android.view.PixelCopy;
 import android.view.SoundEffectConstants;
 import android.view.VelocityTracker;
 import android.view.View;
@@ -279,6 +280,10 @@ public class LauncherActivity extends Activity {
     private android.net.ConnectivityManager connMgr = null;
     private android.net.ConnectivityManager.NetworkCallback netCallback = null;
     private FavoritesBlurView   favoritesBlurLayer;
+    private ImageView           legacyGridBlurLayer;
+    private Bitmap              legacyGridBlurBitmap;
+    private boolean             legacyGridBlurDirty = true;
+    private boolean             legacyGridBlurCapturePending = false;
     private RingView           ringView;
     private FrameLayout        root;
     private Toast              currentToast;
@@ -1296,11 +1301,12 @@ public class LauncherActivity extends Activity {
         // row). INVISIBLE (not GONE) avoids a relayout on open/close.
         s.setVisibility(View.INVISIBLE);
         setHomeChromeVisible(false);
-        // Frosted backdrop: blur the wallpaper behind the translucent drawer.
-        // The shared selection ring stays WHITE in the drawer (it reads well
-        // over the frosted surface) — same colour as on the home shelf.
-        applyDrawerBlur(true);
-        d.open(focus);
+        // Modern TVs blur immediately in hardware. API 26-30 waits one
+        // wallpaper-only frame for the tiny PixelCopy blur preview, avoiding
+        // the old dark-only fallback without ever blurring app cards.
+        prepareLegacyDrawerBlur(() -> {
+            if (!destroyed && d.getVisibility() != View.VISIBLE) d.open(focus);
+        });
     }
 
     /** Close the drawer, re-derive the home row from the (possibly changed)
@@ -1420,20 +1426,101 @@ public class LauncherActivity extends Activity {
         View mb = mapperBtnView;      if (mb != null) { mb.animate().cancel(); mb.setAlpha(0.6f); }
     }
 
-    /** Frosted-glass backdrop for the drawer: GPU-blur the (static) wallpaper
-     *  on Android 12+ (RenderEffect) so the translucent white drawer reads as
-     *  frosted glass. The blur is computed once into the wallpaper view's
-     *  render node — no per-frame cost. No-op on older devices, where the
-     *  drawer falls back to a near-opaque light veil. */
+    /** Apply the grid wallpaper effect. Android 12+ uses RenderEffect. Older
+     *  TVs show a cached downsampled/box-blurred PixelCopy behind the grid. */
     private void applyDrawerBlur(boolean on) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return;
-        RenderEffect fx = null;
-        if (on) {
-            float r = dp(36);
-            fx = RenderEffect.createBlurEffect(r, r, Shader.TileMode.CLAMP);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            RenderEffect fx = null;
+            if (on) {
+                float r = dp(24);
+                fx = RenderEffect.createBlurEffect(r, r, Shader.TileMode.CLAMP);
+            }
+            if (wallpaperFront != null) wallpaperFront.setRenderEffect(fx);
+            if (wallpaperBack  != null) wallpaperBack.setRenderEffect(fx);
+            return;
         }
-        if (wallpaperFront != null) wallpaperFront.setRenderEffect(fx);
-        if (wallpaperBack  != null) wallpaperBack .setRenderEffect(fx);
+
+        ImageView legacy = legacyGridBlurLayer;
+        if (legacy == null) return;
+        if (on && legacyGridBlurBitmap != null) {
+            legacy.setImageBitmap(legacyGridBlurBitmap);
+            legacy.setVisibility(View.VISIBLE);
+        } else if (!on) {
+            legacy.setVisibility(View.GONE);
+        }
+    }
+
+    /** Capture wallpaper-only content after home chrome has been hidden, blur
+     *  a tiny preview, then reveal the legacy grid. PixelCopy keeps hardware
+     *  wallpaper bitmaps readable without a full-resolution CPU copy. */
+    private void prepareLegacyDrawerBlur(Runnable after) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            applyDrawerBlur(true);
+            after.run();
+            return;
+        }
+        if (legacyGridBlurCapturePending) return;
+        if (!legacyGridBlurDirty && legacyGridBlurBitmap != null) {
+            applyDrawerBlur(true);
+            after.run();
+            return;
+        }
+
+        final ImageView layer = legacyGridBlurLayer;
+        final FrameLayout content = root;
+        if (layer == null || content == null || screenW <= 0 || screenH <= 0) {
+            after.run();
+            return;
+        }
+        legacyGridBlurCapturePending = true;
+        layer.setVisibility(View.GONE);
+        // postOnAnimation runs before traversal. Nesting once allows the first
+        // traversal to commit the hidden shelf/chrome, then PixelCopy samples
+        // that wallpaper-only frame on the following animation boundary.
+        content.postOnAnimation(() -> content.postOnAnimation(() -> {
+            if (destroyed) {
+                legacyGridBlurCapturePending = false;
+                return;
+            }
+            int previewW = Math.max(96, screenW / 16);
+            int previewH = Math.max(54, screenH / 16);
+            Bitmap preview;
+            try {
+                preview = Bitmap.createBitmap(previewW, previewH,
+                        Bitmap.Config.ARGB_8888);
+            } catch (OutOfMemoryError error) {
+                legacyGridBlurCapturePending = false;
+                after.run();
+                return;
+            }
+            try {
+                PixelCopy.request(getWindow(), new Rect(0, 0, screenW, screenH),
+                        preview, result -> {
+                            legacyGridBlurCapturePending = false;
+                            if (destroyed) {
+                                preview.recycle();
+                                return;
+                            }
+                            if (result == PixelCopy.SUCCESS) {
+                                LegacyGridBlur.apply(preview, 2);
+                                Bitmap old = legacyGridBlurBitmap;
+                                legacyGridBlurBitmap = preview;
+                                legacyGridBlurDirty = false;
+                                if (old != null && old != preview && !old.isRecycled()) {
+                                    old.recycle();
+                                }
+                                applyDrawerBlur(true);
+                            } else {
+                                preview.recycle();
+                            }
+                            after.run();
+                        }, uiHandler);
+            } catch (RuntimeException error) {
+                legacyGridBlurCapturePending = false;
+                preview.recycle();
+                after.run();
+            }
+        }));
     }
 
     /** Hide / restore the home "chrome" (toolbar pills + clock) while the
@@ -1911,6 +1998,13 @@ public class LauncherActivity extends Activity {
         // clears the ImageView drawables. Keeps the activity from having
         // to know about wallpaper memory hygiene at all.
         if (wallpaperCtl != null) { wallpaperCtl.releaseBitmaps(); wallpaperCtl = null; }
+        if (legacyGridBlurLayer != null) legacyGridBlurLayer.setImageDrawable(null);
+        if (legacyGridBlurBitmap != null && !legacyGridBlurBitmap.isRecycled()) {
+            legacyGridBlurBitmap.recycle();
+        }
+        legacyGridBlurBitmap = null;
+        legacyGridBlurLayer = null;
+        legacyGridBlurCapturePending = false;
         wallpaperFront = null; wallpaperBack = null; clockView = null; shelf = null;
         drawer = null;
         netBtn = null; favoritesBlurLayer = null; ringView = null; root = null;
@@ -2179,6 +2273,16 @@ public class LauncherActivity extends Activity {
         // snapshot pre-painted) — no second decode, no flicker.
         wallpaperCtl.loadSnapshotSync();
 
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+            legacyGridBlurLayer = new ImageView(this);
+            legacyGridBlurLayer.setScaleType(ImageView.ScaleType.FIT_XY);
+            legacyGridBlurLayer.setVisibility(View.GONE);
+            legacyGridBlurLayer.setImportantForAccessibility(
+                    View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+            root.addView(legacyGridBlurLayer,
+                    new FrameLayout.LayoutParams(MATCH, MATCH));
+        }
+
         final int favoritesMarginH = dp(32);
         final int favoritesBottom = dp(18);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -2191,11 +2295,12 @@ public class LauncherActivity extends Activity {
             blurLp.setMargins(favoritesMarginH, 0, favoritesMarginH, favoritesBottom);
             favoritesBlurLayer.setLayoutParams(blurLp);
             root.addView(favoritesBlurLayer);
-            wallpaperCtl.setFrameInvalidator(() -> {
-                FavoritesBlurView layer = favoritesBlurLayer;
-                if (layer != null) layer.invalidate();
-            });
         }
+        wallpaperCtl.setFrameInvalidator(() -> {
+            FavoritesBlurView favorites = favoritesBlurLayer;
+            if (favorites != null) favorites.invalidate();
+            legacyGridBlurDirty = true;
+        });
 
         shelf = new RecyclingShelfView(this);
         shelf.setId(R.id.favorites_bar);
@@ -4714,19 +4819,12 @@ public class LauncherActivity extends Activity {
             rowStride = cellH + rowGap;
             topPad    = dp(28);
             bottomPad = dp(28);
-            // Frosted-white drawer surface. On Android 12+ a translucent white
-            // veil sits over the GPU-blurred wallpaper (see applyDrawerBlur)
-            // for a real frosted-glass look; older devices get a near-opaque
-            // light veil. Clickable so touches don't fall through to the shelf.
-            // v1.4.9: transparent grey tint (was a white veil, which washed
-            // out over light wallpapers). On Android 12+ a translucent grey
-            // sits over the GPU-blurred wallpaper for a frosted-glass look;
-            // older devices get a slightly more opaque grey. Clickable so
-            // touches don't fall through to the shelf. Zero per-frame cost —
-            // it's a flat colour over the (statically) blurred wallpaper.
+            // Keep the veil translucent enough that the wallpaper blur remains
+            // visible. API 26-30 now has a downsampled blur layer too, so it no
+            // longer needs the old near-opaque dark fallback.
             setBackgroundColor(Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
-                    ? 0x7326262B      // ~45% dark grey over the blurred wallpaper
-                    : 0xE61E1E22);    // near-opaque grey (no blur fallback)
+                    ? 0x3326262B      // 20% tint over hardware RenderEffect
+                    : 0x481E1E22);    // 28% tint over cached software blur
             setFocusable(false);
             setClickable(true);
             setClipChildren(false);

@@ -445,8 +445,12 @@ android {
         // Bumped 34 → 35: 2.3.4 vertically centers 3:2 favorite cards
         // within the bottom glass bar after labels were removed.
         // SemVer PATCH — layout alignment only.
-        versionCode   = 35
-        versionName   = "2.3.4"
+        // Bumped 35 → 36: 2.3.5 replaces the API 26-30 dark-only grid
+        // fallback with a cached, downsampled wallpaper blur and lightens
+        // the modern grid tint so hardware blur remains visible.
+        // SemVer PATCH — restores intended visual behavior across Android versions.
+        versionCode   = 36
+        versionName   = "2.3.5"
         resourceConfigurations += listOf("en")
 
         // Instrumentation test runner. Required so :app:connectedDebugAndroidTest
