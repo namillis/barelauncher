@@ -7,6 +7,16 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+## [2.3.3] — 2026-09-20
+
+### Fixed
+
+- **The on-screen keyboard closes after submitting an app or input name.**
+  Pressing Done/Enter now hides the keyboard and moves focus to Save, so the
+  dialog actions remain fully visible and ready for D-pad navigation.
+- **The rename field has balanced spacing.** Its 24 dp horizontal margins keep
+  the text box from touching the full width of the dialog on any TV density.
+
 ## [2.3.1] — 2026-09-19
 
 ### Fixed
