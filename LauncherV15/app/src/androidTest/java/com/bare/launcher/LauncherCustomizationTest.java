@@ -12,6 +12,10 @@ import android.app.AlertDialog;
 import android.content.Context;
 import android.os.SystemClock;
 import android.view.View;
+import android.view.ViewGroup;
+import android.view.WindowManager;
+import android.view.inputmethod.EditorInfo;
+import android.view.inputmethod.InputConnection;
 import android.widget.EditText;
 
 import androidx.test.core.app.ActivityScenario;
@@ -84,6 +88,58 @@ public class LauncherCustomizationTest {
             });
 
             awaitFocusedApp(scenario, "CellView", identity, sourceLabel);
+        }
+    }
+
+    @Test
+    public void renameDialog_imeDoneHidesKeyboardAndFocusesSave() {
+        try (ActivityScenario<LauncherActivity> scenario =
+                     ActivityScenario.launch(LauncherActivity.class)) {
+            AlertDialog dialog = openRenameDialog(scenario, focusHomeCell(scenario), false);
+            scenario.onActivity(activity -> {
+                EditText input = (EditText) field(activity, "renameInput");
+                EditorInfo editorInfo = new EditorInfo();
+                InputConnection connection = input.onCreateInputConnection(editorInfo);
+                assertNotNull(connection);
+                assertEquals(EditorInfo.IME_ACTION_DONE,
+                        editorInfo.imeOptions & EditorInfo.IME_MASK_ACTION);
+                assertTrue(connection.performEditorAction(EditorInfo.IME_ACTION_DONE));
+            });
+
+            awaitValue(scenario, "hidden rename keyboard and focused Save", activity -> {
+                EditText input = (EditText) field(activity, "renameInput");
+                View save = dialog.getButton(AlertDialog.BUTTON_POSITIVE);
+                int softInputState = dialog.getWindow().getAttributes().softInputMode
+                        & WindowManager.LayoutParams.SOFT_INPUT_MASK_STATE;
+                return dialog.isShowing()
+                        && !input.hasFocus()
+                        && save.hasFocus()
+                        && softInputState
+                        == WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN
+                        ? dialog : null;
+            });
+            scenario.onActivity(activity ->
+                    assertTrue(dialog.getButton(AlertDialog.BUTTON_NEGATIVE).performClick()));
+        }
+    }
+
+    @Test
+    public void renameDialog_inputHasBalancedHorizontalSpacing() {
+        try (ActivityScenario<LauncherActivity> scenario =
+                     ActivityScenario.launch(LauncherActivity.class)) {
+            AlertDialog dialog = openRenameDialog(
+                    scenario, focusHomeCell(scenario), false);
+            scenario.onActivity(activity -> {
+                EditText input = (EditText) field(activity, "renameInput");
+                ViewGroup inputContainer = (ViewGroup) input.getParent();
+                int expectedSpacing = Math.round(24 * activity.getResources()
+                        .getDisplayMetrics().density);
+
+                assertEquals(expectedSpacing, inputContainer.getPaddingLeft());
+                assertEquals(expectedSpacing, inputContainer.getPaddingRight());
+                assertTrue(inputContainer.getWidth() > input.getWidth());
+                assertTrue(dialog.getButton(AlertDialog.BUTTON_NEGATIVE).performClick());
+            });
         }
     }
 

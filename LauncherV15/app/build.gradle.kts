@@ -437,6 +437,7 @@ android {
         // Bumped 31 → 32: 2.3.1 preserves each selected image's aspect and
         // alpha shape, renders transparent logos without a square plate, and
         // uses opaque custom art edge-to-edge across the full 5:3 tile.
+        // SemVer PATCH — fixes custom-artwork presentation only.
         // Bumped 32 → 33: 2.3.2 adds the wallpaper-first tvOS-style home.
         // Favorites sit in a bottom glass bar; all app cards use 3:2 geometry,
         // scale-only focus, and labels only in the lower grid. Android 12+
@@ -444,8 +445,11 @@ android {
         // three-pass Gaussian approximation. The public application ID remains
         // `com.bare.launcher`, so v2.3.1 installs update in place.
         // SemVer PATCH — user-visible launcher redesign with compatibility fixes.
-        versionCode   = 33
-        versionName   = "2.3.2"
+        // Bumped 33 → 34: 2.3.3 dismisses the on-screen keyboard when the
+        // rename field submits Done/Enter and adds balanced field spacing.
+        // SemVer PATCH — fixes rename-dialog presentation only.
+        versionCode   = 34
+        versionName   = "2.3.3"
         resourceConfigurations += listOf("en")
 
         // Instrumentation test runner. Required so :app:connectedDebugAndroidTest

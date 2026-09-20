@@ -58,6 +58,8 @@ import android.view.animation.OvershootInterpolator;
 import android.view.animation.PathInterpolator;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
+import android.view.inputmethod.EditorInfo;
+import android.view.inputmethod.InputMethodManager;
 import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
@@ -9891,15 +9893,21 @@ public class LauncherActivity extends Activity {
         input.setHint(R.string.rename_hint);
         input.setContentDescription(getString(R.string.rename_hint));
         input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
+        input.setImeOptions(EditorInfo.IME_ACTION_DONE);
         input.setFilters(new InputFilter[] {
                 new InputFilter.LengthFilter(CustomNameStore.MAX_NAME_CODE_POINTS * 2)
         });
         input.setText(app.label);
         input.selectAll();
 
+        FrameLayout inputContainer = new FrameLayout(this);
+        inputContainer.setPadding(dp(24), dp(8), dp(24), 0);
+        inputContainer.addView(input, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
         AlertDialog.Builder builder = new AlertDialog.Builder(this)
                 .setTitle(getString(R.string.rename_title, app.label))
-                .setView(input)
+                .setView(inputContainer)
                 .setPositiveButton(R.string.rename_save, (dialog, which) ->
                         applyCustomNameOverride(app, input.getText().toString(),
                                 fromDrawer, focusHint))
@@ -9912,6 +9920,15 @@ public class LauncherActivity extends Activity {
         AlertDialog dialog = builder.create();
         renameDialog = dialog;
         renameInput = input;
+        input.setOnEditorActionListener((view, actionId, event) -> {
+            boolean isDone = actionId == EditorInfo.IME_ACTION_DONE;
+            boolean isEnter = event != null
+                    && event.getKeyCode() == KeyEvent.KEYCODE_ENTER
+                    && event.getAction() == KeyEvent.ACTION_UP;
+            if (!isDone && !isEnter) return false;
+            hideRenameKeyboard(dialog, input);
+            return true;
+        });
         dialog.setOnCancelListener(ignored ->
                 restoreCustomizationFocus(fromDrawer, app.packageName, focusHint));
         dialog.setOnDismissListener(ignored -> {
@@ -9929,6 +9946,26 @@ public class LauncherActivity extends Activity {
             }
         });
         dialog.show();
+    }
+
+    /** Hide the IME after Done/Enter and return D-pad focus to the dialog actions. */
+    private void hideRenameKeyboard(AlertDialog dialog, EditText input) {
+        Window window = dialog.getWindow();
+        if (window != null) {
+            window.setSoftInputMode(
+                    android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN);
+        }
+        InputMethodManager keyboard =
+                (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+        if (keyboard != null) {
+            keyboard.hideSoftInputFromWindow(input.getWindowToken(), 0);
+        }
+        input.clearFocus();
+        View save = dialog.getButton(AlertDialog.BUTTON_POSITIVE);
+        if (save != null) {
+            save.setFocusableInTouchMode(true);
+            save.post(save::requestFocus);
+        }
     }
 
     private void applyCustomNameOverride(AppInfo app, String requestedName,
