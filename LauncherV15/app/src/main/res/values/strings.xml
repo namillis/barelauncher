@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Bare Launcher AT4K</string>
+    <string name="app_name">Bare Launcher</string>
 
     <!-- Accessibility / TalkBack content descriptions for non-text UI -->
     <string name="cd_app_shelf">App shelf</string>
@@ -70,7 +70,7 @@
 
     <!-- About card (v1.4.9). Version is filled in at runtime from the
          installed package, so it always matches the actual app version. -->
-    <string name="about_app_name">Bare Launcher AT4K</string>
+    <string name="about_app_name">BareLauncher</string>
     <string name="about_kofi">Support me on Ko-fi</string>
     <!-- %1$s is the Downloader app code for the latest release APK. -->
     <string name="about_downloader_code">Downloader code:  %1$s</string>
