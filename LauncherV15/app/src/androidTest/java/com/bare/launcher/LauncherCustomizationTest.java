@@ -224,7 +224,7 @@ public class LauncherCustomizationTest {
                         ((ViewGroup) column.getChildAt(1)).getChildAt(1)).getText().toString());
                 assertEquals("Off", ((android.widget.TextView)
                         ((ViewGroup) column.getChildAt(2)).getChildAt(1)).getText().toString());
-                assertEquals("< #00E5FF >", ((android.widget.TextView)
+                assertEquals("< Cyan >", ((android.widget.TextView)
                         ((ViewGroup) column.getChildAt(3)).getChildAt(1)).getText().toString());
                 assertEquals(5, preferences.getInt(columnsKey, -1));
                 assertEquals(18, preferences.getInt(cornerKey, -1));
@@ -400,7 +400,8 @@ public class LauncherCustomizationTest {
                 prefsName, Context.MODE_PRIVATE);
         boolean hadBorder = preferences.contains(borderKey);
         boolean hadColor = preferences.contains(colorKey);
-        boolean oldBorder = preferences.getBoolean(borderKey, true);
+        boolean oldBorder = preferences.getBoolean(
+                borderKey, LayoutOptions.DEFAULT_FOCUS_BORDER_ENABLED);
         int oldColor = preferences.getInt(colorKey, LayoutOptions.DEFAULT_FOCUS_COLOR);
         int customColor = 0xFF00E5FF;
         assertTrue(preferences.edit().putBoolean(borderKey, true)
@@ -423,9 +424,25 @@ public class LauncherCustomizationTest {
                         ? homeCell : null;
             });
             scenario.onActivity(activity -> {
-                Object ring = field(activity, "ringView");
-                android.graphics.Paint paint = (android.graphics.Paint) field(ring, "ring");
+                View ringView = (View) field(activity, "ringView");
+                android.graphics.Paint paint = (android.graphics.Paint)
+                        field(ringView, "ring");
                 assertEquals(customColor, paint.getColor());
+
+                FrameLayout root = (FrameLayout) field(activity, "root");
+                int[] cellLocation = new int[2];
+                int[] rootLocation = new int[2];
+                homeCell.getLocationOnScreen(cellLocation);
+                root.getLocationOnScreen(rootLocation);
+                int cellHeight = (Integer) field(activity, "cellHpx");
+                int bannerHeight = (Integer) field(activity, "bannerHpx");
+                float artworkCenter = At4kHomeLayout.centeredTop(
+                        cellHeight, bannerHeight) + bannerHeight / 2f;
+                float expectedCenterY = cellLocation[1] - rootLocation[1]
+                        + artworkCenter * homeCell.getScaleY();
+                float actualCenterY = ringView.getY() + ringView.getHeight() / 2f;
+                assertEquals("favorites border follows artwork center",
+                        expectedCenterY, actualCenterY, 1f);
             });
 
             scenario.onActivity(activity -> invoke(activity, "openDrawer"));

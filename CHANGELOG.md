@@ -11,9 +11,11 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
-- **Focus borders are back and customizable.** Layout settings now includes a
-  default-on Focus border toggle and a high-contrast Focus color selector, so
-  the remote cursor remains easy to track across the room.
+- **Focus borders are optional and customizable.** Layout settings includes a
+  default-off Focus border toggle and a named high-contrast Focus color selector,
+  so users can add an unmistakable remote cursor without decoding hex values.
+- **Focus borders align with every app card.** The outline follows the actual
+  artwork center in both the favorites bar and lower app grid.
 
 ### Changed
 

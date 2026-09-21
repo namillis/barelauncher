@@ -62,6 +62,7 @@
     <string name="settings_row_focus_color">Focus color</string>
     <string name="settings_value_columns">&lt; %1$d &gt;</string>
     <string name="settings_value_percent">&lt; %1$d%% &gt;</string>
+    <string name="settings_value_focus_color">&lt; %1$s &gt;</string>
     <string name="settings_row_set_wallpaper">Set wallpaper</string>
     <string name="settings_row_wallpaper_menu">Wallpaper / Slideshow</string>
     <string name="settings_row_backup_menu">Backup &amp; restore</string>

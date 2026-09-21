@@ -987,7 +987,7 @@ public class LauncherActivity extends Activity {
             case SR_LAYOUT_COLUMNS:     return "< 7 >";
             case SR_CARD_CORNER:        return "< 30% >";
             case SR_FOCUS_BORDER:       return "Off";
-            case SR_FOCUS_COLOR:        return "< #FFFFFF >";
+            case SR_FOCUS_COLOR:        return "< Magenta >";
             case SR_SLIDESHOW_FOLDER:   return "Not set";
             case SR_SLIDESHOW_DURATION: return "< 1.5 min >";   // widest bracketed label
             case SR_SLIDESHOW_RESTART:  return "Off";
@@ -7354,8 +7354,8 @@ public class LauncherActivity extends Activity {
                             ? (sel ? selTx : 0xFF7DD3FC)
                             : (sel ? 0x66111114 : 0x66FFFFFF));
                 } else if (rowId == SR_FOCUS_COLOR) {
-                    ind.setText(String.format(java.util.Locale.US, "< #%06X >",
-                            focusBorderColor & 0x00FFFFFF));
+                    ind.setText(getString(R.string.settings_value_focus_color,
+                            LayoutOptions.focusColorName(focusBorderColor)));
                     ind.setTextColor(sel ? selTx : focusBorderColor);
                     ind.setAlpha(focusBorderEnabled ? 1f : 0.45f);
                 } else if (rowId == SR_CLOCK) {
@@ -9943,15 +9943,23 @@ public class LauncherActivity extends Activity {
 
         // Cells animate to scaleX/Y = FOCUS_SCALE on focus around the centre
         // pivot. getLocationOnScreen returns the post-transform VISUAL
-        // top-left, which already includes the scale-induced offset. We
-        // project the icon centre via the cell's scale to find the visual
-        // icon centre:
-        //   visualIconCx = visualTopLeftX + cell.getWidth() * scaleX / 2
-        //   visualIconCy = visualTopLeftY + cachedIcyOffset * scaleY
+        // top-left, which already includes the scale-induced offset. Each cell
+        // type can place its artwork at a different vertical center: favorites
+        // center the card in the taller home bar, while lower-grid cells start
+        // at the top of their label-bearing cell. Use the same center that the
+        // cell's onDraw() uses so the border hugs the artwork in both layouts.
         float sx = cell.getScaleX();
         float sy = cell.getScaleY();
+        float iconCenterY = cachedIcyOffset;
+        if (cell instanceof RecyclingShelfView.CellView) {
+            iconCenterY = ((RecyclingShelfView.CellView) cell).icyOffset;
+        } else if (cell instanceof AppDrawer.DrawerCell) {
+            AppDrawer.DrawerCell drawerCell = (AppDrawer.DrawerCell) cell;
+            iconCenterY = drawerCell.boundIndex >= 0 && drawerCell.boundIndex < homeCount
+                    ? cellHpx / 2f : drawerCell.icyOffset;
+        }
         float cx = (ringCellLoc[0] - ringRootLoc[0]) + cell.getWidth() * sx / 2f;
-        float cy = (ringCellLoc[1] - ringRootLoc[1]) + cachedIcyOffset * sy;
+        float cy = (ringCellLoc[1] - ringRootLoc[1]) + iconCenterY * sy;
         // Keep the ring's own scale in lockstep with the cell so its radius
         // hugs the focused icon — a fixed-size ring sat INSIDE the focused
         // icon by ~2.5dp, which read as misalignment.
