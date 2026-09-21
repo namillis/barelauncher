@@ -1,0 +1,153 @@
+# Changelog
+
+All notable changes to BareLauncher land here.
+
+The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
+and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+## [2.4.9] — 2026-09-21
+
+### Fixed
+
+- **API 26 device tests wait for the launcher's final landscape activity.**
+  ActivityScenario setup now follows the portrait-to-landscape recreation before
+  keeping view or dialog references, so release checks cannot act on an activity
+  Android has already replaced.
+
+## [2.4.8] — 2026-09-21
+
+### Fixed
+
+- **The app drawer still opens when an older TV compositor stalls blur capture.**
+  Legacy PixelCopy preparation now has a bounded fallback that continues without
+  blur and discards any late callback, so optional wallpaper polish cannot block
+  D-pad navigation.
+
+## [2.4.7] — 2026-09-21
+
+### Fixed
+
+- **Cold-emulator release checks wait for the launcher to be ready.** Device-test
+  setup now establishes home-cell focus only after the shelf can accept it, and
+  smoke tests wait for non-zero content dimensions instead of treating an idle
+  looper as proof that the first layout finished.
+
+## [2.4.6] — 2026-09-21
+
+### Fixed
+
+- **Save, Cancel, and Reset are always reachable with a TV remote.** Rename now
+  marks each action explicitly focusable in touch mode when the dialog opens,
+  avoiding API 26 and ROM-specific AlertDialog defaults.
+
+## [2.4.5] — 2026-09-21
+
+### Fixed
+
+- **Rename Save, Reset, Cancel, and Back restore launcher focus after the dialog
+  closes.** Waiting for `OnDismiss` prevents the dialog window from reclaiming
+  focus after the shelf or app grid has already received it.
+- **Rename-dialog device tests no longer depend on context-menu animation.** The
+  menu action keeps separate coverage while dialog behavior is tested directly.
+
+## [2.4.4] — 2026-09-21
+
+### Fixed
+
+- **D-pad Up reliably returns focus from the app grid to favorites.** BareLauncher
+  restores the matching favorite immediately and reasserts it after the drawer
+  fade, preventing the still-visible drawer from reclaiming focus on slower TVs.
+- **Release device tests synchronize with real UI state.** Layout-settings checks
+  wait for the panel, page, and persisted values, while navigation tests send the
+  complete app-scoped key-event pair before checking final state.
+
+## [2.4.3] — 2026-09-20
+
+### Fixed
+
+- **API 26 release validation no longer races Rename-dialog focus.** The device
+  tests now wait for the dialog and actions first, then explicitly establish
+  the input-focus precondition required by the keyboard tests. App behavior is
+  unchanged.
+
+## [2.4.2] — 2026-09-20
+
+### Fixed
+
+- **App cards now use the correct tvOS 5:3 proportions.** Favorites and the
+  lower app grid render at the same 400:240 shape used by Apple TV artwork,
+  across every 4–7 column layout. Existing custom artwork and layout settings
+  continue to work without migration.
+
+## [2.4.1] — 2026-09-20
+
+### Added
+
+- **Focused app tiles now cast a soft drop shadow.** The shadow rises with the
+  existing scale animation on both the favorites bar and app grid, then clears
+  completely when focus moves away.
+
+## [2.3.3] — 2026-09-20
+
+### Fixed
+
+- **The on-screen keyboard closes after submitting an app or input name.**
+  Pressing Done/Enter now hides the keyboard and moves focus to Save, so the
+  dialog actions remain fully visible and ready for D-pad navigation.
+- **The rename field has balanced spacing.** Its 24 dp horizontal margins keep
+  the text box from touching the full width of the dialog on any TV density.
+
+## [2.3.1] — 2026-09-19
+
+### Fixed
+
+- **Custom artwork keeps its real shape and fills the tile correctly.**
+  Selected images are no longer converted into square source bitmaps.
+  Transparent logos keep their alpha outline and render at nearly the full
+  tile height without a white or square plate. Opaque images render
+  edge-to-edge across the 5:3 tile with rounded tile corners.
+
+## [2.3.0] — 2026-09-18
+
+### Added
+
+- **Custom names.** Rename any app or TV input locally from its long-press
+  menu, or reset it to the name supplied by Android or the TV. Names are
+  included in settings backups.
+- **Custom TV-input icons.** HDMI, AV, tuner, and other input tiles now
+  support Change icon and Reset icon just like installed apps.
+
+### Fixed
+
+- **Custom icons now fill their intended area.** Landscape and portrait
+  images are center-cropped instead of being placed inside a transparent
+  square, and excess transparent padding around PNG artwork is trimmed.
+- **The app drawer keeps control after choosing an icon.** Refreshing one
+  tile no longer rebinds the hidden favorites shelf and steals D-pad focus
+  while the drawer remains visible.
+
+## [2.2.0] — 2026-06-26
+
+### Added
+
+- **Custom app icons.** Long-press any app to choose a local PNG, JPEG,
+  or WebP image. BareLauncher keeps a private optimized copy, applies it
+  to both launcher tiles and shortcut chips, and provides a Reset icon
+  action to restore the app-provided artwork.
+
+### What's new
+
+- **Back up and restore your setup.** Save your layout — app order, home
+  favourites, hidden apps, button shortcuts and clock style — to a file,
+  and load it back later or on another TV. Find it under Settings →
+  Backup & restore.
+- **Wallpaper slideshow.** Under Settings → Wallpaper / Slideshow, pick a
+  folder of images and have your wallpaper change on its own — every 30
+  seconds up to 10 minutes, and/or a fresh one each time the TV starts.
+  Picking a single wallpaper turns the slideshow off again. (Choosing a
+  folder asks once for permission to read your photos.) It only runs while
+  you're on the home screen, so it never slows anything down or drains
+  power in the background, and your home screen still appears instantly on
+  startup.
