@@ -42,10 +42,12 @@ final class HomeDrawerModel {
 
     private HomeDrawerModel() { /* no instances */ }
 
-    /** Apps per drawer row, and the hard cap on the home-row size. v1.5.0
-     *  uses 6 (down from 8) for larger, TV-friendly rounded-square tiles in
-     *  the modern TV idiom. */
-    static final int COLS = 6;
+    /** Default apps per row for existing installs and compatibility overloads. */
+    static final int COLS = LayoutOptions.DEFAULT_COLUMNS;
+
+    private static int cols(int columns) {
+        return LayoutOptions.sanitizeColumns(columns);
+    }
 
     /** Sentinel returned by {@link #navUp(int, int, int)} when UP is pressed
      *  on a cell in the drawer's top row — the caller should close the drawer
@@ -59,19 +61,23 @@ final class HomeDrawerModel {
      *  size)]}. Used everywhere a raw / persisted / mutated value enters the
      *  model so no downstream helper ever sees an out-of-range count. */
     static int clampHomeCount(int homeCount, int size) {
-        int cap = Math.min(COLS, Math.max(0, size));
+        return clampHomeCount(COLS, homeCount, size);
+    }
+
+    static int clampHomeCount(int columns, int homeCount, int size) {
+        int cap = Math.min(cols(columns), Math.max(0, size));
         if (homeCount < 0)   return 0;
         if (homeCount > cap) return cap;
         return homeCount;
     }
 
-    /** Default home-row size for a brand-new install (or the first run after
-     *  an upgrade where no {@code home_count} pref exists yet): the first
-     *  {@link #COLS} apps, or all of them when fewer than {@link #COLS} are
-     *  installed. Mirrors the legacy "first {@link #COLS} of the stored order"
-     *  behaviour so an upgrade never resets the user to alphabetical. */
+    /** Default home-row size for a brand-new install. */
     static int defaultHomeCount(int size) {
-        return Math.min(COLS, Math.max(0, size));
+        return defaultHomeCount(COLS, size);
+    }
+
+    static int defaultHomeCount(int columns, int size) {
+        return Math.min(cols(columns), Math.max(0, size));
     }
 
     // ── grid geometry ────────────────────────────────────────────────────
@@ -87,120 +93,155 @@ final class HomeDrawerModel {
     /** Total number of grid rows needed to render {@code size} apps with the
      *  given {@code homeCount}. Zero when there are no apps. */
     static int rowCount(int size, int homeCount) {
-        homeCount = clampHomeCount(homeCount, size);
+        return rowCount(COLS, size, homeCount);
+    }
+
+    static int rowCount(int columns, int size, int homeCount) {
+        columns = cols(columns);
+        homeCount = clampHomeCount(columns, homeCount, size);
         if (size <= 0) return 0;
         int nonHome = size - homeCount;
-        int base = nonHomeBaseRow(homeCount); // 0 or 1
-        if (nonHome <= 0) return base == 0 ? 0 : 1; // everything fits in the home row
-        return base + (nonHome + COLS - 1) / COLS;
+        int base = nonHomeBaseRow(homeCount);
+        if (nonHome <= 0) return base == 0 ? 0 : 1;
+        return base + (nonHome + columns - 1) / columns;
     }
 
     /** Grid row of the app at flat index {@code index}. */
     static int rowOf(int index, int homeCount) {
+        return rowOf(COLS, index, homeCount);
+    }
+
+    static int rowOf(int columns, int index, int homeCount) {
+        columns = cols(columns);
         if (homeCount > 0 && index < homeCount) return 0;
         int j = index - homeCount;
-        return nonHomeBaseRow(homeCount) + j / COLS;
+        return nonHomeBaseRow(homeCount) + j / columns;
     }
 
     /** Grid column of the app at flat index {@code index}. */
     static int colOf(int index, int homeCount) {
+        return colOf(COLS, index, homeCount);
+    }
+
+    static int colOf(int columns, int index, int homeCount) {
+        columns = cols(columns);
         if (homeCount > 0 && index < homeCount) return index;
         int j = index - homeCount;
-        return j % COLS;
+        return j % columns;
     }
 
-    /** Number of cells actually present in grid row {@code row}. Row 0 (when
-     *  there are home apps) holds {@code homeCount}; the last non-home row may
-     *  be a short, left-aligned remainder. */
+    /** Number of cells actually present in grid row {@code row}. */
     static int rowLength(int row, int size, int homeCount) {
-        homeCount = clampHomeCount(homeCount, size);
-        if (size <= 0 || row < 0 || row >= rowCount(size, homeCount)) return 0;
-        if (homeCount > 0 && row == 0) return homeCount;
-        int firstIdx = firstIndexOfRow(row, homeCount);
-        return Math.min(COLS, size - firstIdx);
+        return rowLength(COLS, row, size, homeCount);
     }
 
-    /** Flat index of the first cell in grid row {@code row} (ignoring whether
-     *  that row is fully populated — callers gate with {@link #rowLength}). */
+    static int rowLength(int columns, int row, int size, int homeCount) {
+        columns = cols(columns);
+        homeCount = clampHomeCount(columns, homeCount, size);
+        if (size <= 0 || row < 0 || row >= rowCount(columns, size, homeCount)) return 0;
+        if (homeCount > 0 && row == 0) return homeCount;
+        int firstIdx = firstIndexOfRow(columns, row, homeCount);
+        return Math.min(columns, size - firstIdx);
+    }
+
+    /** Flat index of the first cell in grid row {@code row}. */
     static int firstIndexOfRow(int row, int homeCount) {
+        return firstIndexOfRow(COLS, row, homeCount);
+    }
+
+    static int firstIndexOfRow(int columns, int row, int homeCount) {
+        columns = cols(columns);
         if (homeCount > 0 && row == 0) return 0;
         int base = nonHomeBaseRow(homeCount);
-        return homeCount + (row - base) * COLS;
+        return homeCount + (row - base) * columns;
     }
 
-    /** Flat index of the cell at ({@code row}, {@code col}), or -1 if that
-     *  slot is empty (e.g. a gap in the last partial row, or a column past
-     *  the end of a short home row). */
+    /** Flat index of the cell at ({@code row}, {@code col}), or -1. */
     static int indexAt(int row, int col, int size, int homeCount) {
-        homeCount = clampHomeCount(homeCount, size);
-        if (col < 0 || col >= COLS) return -1;
-        int len = rowLength(row, size, homeCount);
+        return indexAt(COLS, row, col, size, homeCount);
+    }
+
+    static int indexAt(int columns, int row, int col, int size, int homeCount) {
+        columns = cols(columns);
+        homeCount = clampHomeCount(columns, homeCount, size);
+        if (col < 0 || col >= columns) return -1;
+        int len = rowLength(columns, row, size, homeCount);
         if (col >= len) return -1;
-        return firstIndexOfRow(row, homeCount) + col;
+        return firstIndexOfRow(columns, row, homeCount) + col;
     }
 
     // ── focus navigation (drawer, NOT in Move mode) ──────────────────────
 
     /** LEFT within the drawer. Stops at the row's left edge (no wrap). */
     static int navLeft(int index, int size, int homeCount) {
-        homeCount = clampHomeCount(homeCount, size);
+        return navLeft(COLS, index, size, homeCount);
+    }
+
+    static int navLeft(int columns, int index, int size, int homeCount) {
+        homeCount = clampHomeCount(columns, homeCount, size);
         if (index <= 0) return index;
-        return colOf(index, homeCount) > 0 ? index - 1 : index;
+        return colOf(columns, index, homeCount) > 0 ? index - 1 : index;
     }
 
     /** RIGHT within the drawer. Stops at the row's right edge (no wrap). */
     static int navRight(int index, int size, int homeCount) {
-        homeCount = clampHomeCount(homeCount, size);
-        if (index < 0 || index >= size - 1) return index < 0 ? 0 : index;
-        int row = rowOf(index, homeCount);
-        return colOf(index + 1, homeCount) == 0 || rowOf(index + 1, homeCount) != row
-                ? index           // next cell is on a new row → stay
-                : index + 1;
+        return navRight(COLS, index, size, homeCount);
     }
 
-    /** UP within the drawer. Returns {@link #CLOSE_DRAWER} when the focused
-     *  cell is already on the top row (the caller closes the drawer and
-     *  returns to the home favourites screen). Otherwise returns the index of
-     *  the cell directly above, snapping to the nearest existing cell when the
-     *  row above is shorter (e.g. a partial / centred home row). */
+    static int navRight(int columns, int index, int size, int homeCount) {
+        homeCount = clampHomeCount(columns, homeCount, size);
+        if (index < 0 || index >= size - 1) return index < 0 ? 0 : index;
+        int row = rowOf(columns, index, homeCount);
+        return colOf(columns, index + 1, homeCount) == 0
+                || rowOf(columns, index + 1, homeCount) != row
+                ? index : index + 1;
+    }
+
+    /** UP within the drawer. */
     static int navUp(int index, int size, int homeCount) {
-        homeCount = clampHomeCount(homeCount, size);
+        return navUp(COLS, index, size, homeCount);
+    }
+
+    static int navUp(int columns, int index, int size, int homeCount) {
+        homeCount = clampHomeCount(columns, homeCount, size);
         if (size <= 0) return CLOSE_DRAWER;
         if (index < 0) return 0;
-        int row = rowOf(index, homeCount);
-        if (row == 0) return CLOSE_DRAWER;          // top row → close
-        int col = colOf(index, homeCount);
+        int row = rowOf(columns, index, homeCount);
+        if (row == 0) return CLOSE_DRAWER;
+        int col = colOf(columns, index, homeCount);
         int targetRow = row - 1;
-        int len = rowLength(targetRow, size, homeCount);
+        int len = rowLength(columns, targetRow, size, homeCount);
         if (len <= 0) return CLOSE_DRAWER;
-        int targetCol = Math.min(col, len - 1);
-        return indexAt(targetRow, targetCol, size, homeCount);
+        return indexAt(columns, targetRow, Math.min(col, len - 1), size, homeCount);
     }
 
-    /** Whether an UP result crosses from the app grid into the mirrored home
-     *  row. The caller closes the drawer and transfers focus directly to the
-     *  matching bottom favorite instead of briefly focusing row 0 in-grid. */
     static boolean shouldCloseOnNavUp(int index, int targetIndex,
                                       int size, int homeCount) {
-        homeCount = clampHomeCount(homeCount, size);
+        return shouldCloseOnNavUp(COLS, index, targetIndex, size, homeCount);
+    }
+
+    static boolean shouldCloseOnNavUp(int columns, int index, int targetIndex,
+                                      int size, int homeCount) {
+        homeCount = clampHomeCount(columns, homeCount, size);
         return homeCount > 0
                 && index >= homeCount && index < size
                 && targetIndex >= 0 && targetIndex < homeCount;
     }
 
-    /** DOWN within the drawer. Moves to the cell directly below, snapping to
-     *  the nearest existing cell when the row below is shorter. Stays put when
-     *  already on the last row. */
+    /** DOWN within the drawer. */
     static int navDown(int index, int size, int homeCount) {
-        homeCount = clampHomeCount(homeCount, size);
+        return navDown(COLS, index, size, homeCount);
+    }
+
+    static int navDown(int columns, int index, int size, int homeCount) {
+        homeCount = clampHomeCount(columns, homeCount, size);
         if (size <= 0 || index < 0) return index < 0 ? 0 : index;
-        int row = rowOf(index, homeCount);
-        int col = colOf(index, homeCount);
+        int row = rowOf(columns, index, homeCount);
+        int col = colOf(columns, index, homeCount);
         int targetRow = row + 1;
-        int len = rowLength(targetRow, size, homeCount);
-        if (len <= 0) return index;                 // already on the last row
-        int targetCol = Math.min(col, len - 1);
-        return indexAt(targetRow, targetCol, size, homeCount);
+        int len = rowLength(columns, targetRow, size, homeCount);
+        if (len <= 0) return index;
+        return indexAt(columns, targetRow, Math.min(col, len - 1), size, homeCount);
     }
 
     // ── reorder / Move mode (drawer) ─────────────────────────────────────
@@ -217,21 +258,29 @@ final class HomeDrawerModel {
     /** Swap the dragged app one position LEFT inside its row. No-op at the
      *  row's left edge. {@code homeCount} is unchanged. */
     static <T> MoveResult moveLeft(List<T> order, int index, int homeCount) {
-        homeCount = clampHomeCount(homeCount, order.size());
-        if (index > 0 && colOf(index, homeCount) > 0) {
+        return moveLeft(COLS, order, index, homeCount);
+    }
+
+    static <T> MoveResult moveLeft(int columns, List<T> order, int index, int homeCount) {
+        homeCount = clampHomeCount(columns, homeCount, order.size());
+        if (index > 0 && colOf(columns, index, homeCount) > 0) {
             Collections.swap(order, index, index - 1);
             return new MoveResult(homeCount, index - 1);
         }
         return new MoveResult(homeCount, index);
     }
 
-    /** Swap the dragged app one position RIGHT inside its row. No-op at the
-     *  row's right edge. {@code homeCount} is unchanged. */
+    /** Swap the dragged app one position RIGHT inside its row. */
     static <T> MoveResult moveRight(List<T> order, int index, int homeCount) {
+        return moveRight(COLS, order, index, homeCount);
+    }
+
+    static <T> MoveResult moveRight(int columns, List<T> order, int index, int homeCount) {
         int size = order.size();
-        homeCount = clampHomeCount(homeCount, size);
+        homeCount = clampHomeCount(columns, homeCount, size);
         if (index >= 0 && index < size - 1
-                && rowOf(index + 1, homeCount) == rowOf(index, homeCount)) {
+                && rowOf(columns, index + 1, homeCount)
+                == rowOf(columns, index, homeCount)) {
             Collections.swap(order, index, index + 1);
             return new MoveResult(homeCount, index + 1);
         }
@@ -263,37 +312,33 @@ final class HomeDrawerModel {
      * </ul>
      */
     static <T> MoveResult moveUp(List<T> order, int index, int homeCount) {
+        return moveUp(COLS, order, index, homeCount);
+    }
+
+    static <T> MoveResult moveUp(int columns, List<T> order, int index, int homeCount) {
+        columns = cols(columns);
         int size = order.size();
-        homeCount = clampHomeCount(homeCount, size);
+        homeCount = clampHomeCount(columns, homeCount, size);
         if (index < 0 || size == 0) return new MoveResult(homeCount, Math.max(0, index));
-        int row = rowOf(index, homeCount);
+        int row = rowOf(columns, index, homeCount);
         if (homeCount == 0 && row == 0) {
-            // No home row yet — pushing the top-row app up turns it into the
-            // first home favourite (inverse of demoting the last home app).
             T app = order.remove(index);
             order.add(0, app);
             return new MoveResult(1, 0);
         }
-        if (row == 0) return new MoveResult(homeCount, index);   // home app at top → nothing above
+        if (row == 0) return new MoveResult(homeCount, index);
 
         int base = nonHomeBaseRow(homeCount);
-        if (row == base && homeCount < COLS) {
-            // PROMOTE: pull out and append to the end of the home segment.
+        if (row == base && homeCount < columns) {
             T app = order.remove(index);
-            int dest = homeCount;            // first slot just past the current home segment
+            int dest = homeCount;
             order.add(dest, app);
             return new MoveResult(homeCount + 1, dest);
         }
-        // Either the home row is full (row == base, homeCount == COLS) or this
-        // is a lower row: a straight vertical swap with the cell directly above
-        // (same column). For the full-home-row case this means the moved app
-        // takes the home slot above it and the replaced home app drops into the
-        // slot the moved app vacated.
-        // Ordinary vertical swap with the cell directly above (same column).
-        int col = colOf(index, homeCount);
-        int aboveLen = rowLength(row - 1, size, homeCount);
-        int targetCol = Math.min(col, aboveLen - 1);
-        int target = indexAt(row - 1, targetCol, size, homeCount);
+        int col = colOf(columns, index, homeCount);
+        int aboveLen = rowLength(columns, row - 1, size, homeCount);
+        int target = indexAt(columns, row - 1, Math.min(col, aboveLen - 1),
+                size, homeCount);
         if (target >= 0 && target != index) {
             Collections.swap(order, index, target);
             return new MoveResult(homeCount, target);
@@ -315,26 +360,26 @@ final class HomeDrawerModel {
      * </ul>
      */
     static <T> MoveResult moveDown(List<T> order, int index, int homeCount) {
+        return moveDown(COLS, order, index, homeCount);
+    }
+
+    static <T> MoveResult moveDown(int columns, List<T> order, int index, int homeCount) {
         int size = order.size();
-        homeCount = clampHomeCount(homeCount, size);
+        homeCount = clampHomeCount(columns, homeCount, size);
         if (index < 0 || size == 0) return new MoveResult(homeCount, Math.max(0, index));
-        int row = rowOf(index, homeCount);
+        int row = rowOf(columns, index, homeCount);
 
         if (homeCount > 0 && row == 0) {
-            // DEMOTE: move just past the (shrinking) home segment so it becomes
-            // the first non-home app. Removing index then inserting at
-            // homeCount-1 lands it exactly at the head of the non-home run.
             T app = order.remove(index);
             int dest = homeCount - 1;
             order.add(dest, app);
             return new MoveResult(homeCount - 1, dest);
         }
-        // Ordinary vertical swap with the cell directly below (same column).
-        int col = colOf(index, homeCount);
-        int belowLen = rowLength(row + 1, size, homeCount);
-        if (belowLen <= 0) return new MoveResult(homeCount, index); // last row
-        int targetCol = Math.min(col, belowLen - 1);
-        int target = indexAt(row + 1, targetCol, size, homeCount);
+        int col = colOf(columns, index, homeCount);
+        int belowLen = rowLength(columns, row + 1, size, homeCount);
+        if (belowLen <= 0) return new MoveResult(homeCount, index);
+        int target = indexAt(columns, row + 1, Math.min(col, belowLen - 1),
+                size, homeCount);
         if (target >= 0 && target != index) {
             Collections.swap(order, index, target);
             return new MoveResult(homeCount, target);

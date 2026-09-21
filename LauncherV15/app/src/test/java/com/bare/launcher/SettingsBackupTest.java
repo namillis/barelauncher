@@ -20,7 +20,8 @@ public class SettingsBackupTest {
         String customNames = CustomNameStore.serialize(names);
 
         SettingsBackup.Parsed parsed = SettingsBackup.parse(SettingsBackup.serialize(
-                "com.example", 4, "183=com.example", "com.hidden", 1, customNames));
+                "com.example", 4, "183=com.example", "com.hidden", 1,
+                6, 20, customNames));
 
         assertNotNull(parsed);
         assertEquals(names,
@@ -40,14 +41,23 @@ public class SettingsBackupTest {
 
     @Test public void serialize_nullCustomNames_writesPresentEmptyField() {
         SettingsBackup.Parsed parsed = SettingsBackup.parse(SettingsBackup.serialize(
-                "", 1, "", "", 0, null));
+                "", 1, "", "", 0, 6, 20, null));
 
         assertNotNull(parsed);
         assertTrue(parsed.has(SettingsBackup.K_CUSTOM_NAMES));
         assertEquals("", parsed.str(SettingsBackup.K_CUSTOM_NAMES));
     }
 
+    @Test public void serializeAndParse_roundTripsLayoutOptions() {
+        SettingsBackup.Parsed parsed = SettingsBackup.parse(SettingsBackup.serialize(
+                "", 4, "", "", 0, 4, 28, ""));
+
+        assertNotNull(parsed);
+        assertEquals(4, parsed.intVal(SettingsBackup.K_LAYOUT_COLUMNS, -1));
+        assertEquals(28, parsed.intVal(SettingsBackup.K_CARD_CORNER_PERCENT, -1));
+    }
+
     @Test public void parse_futureVersion_isRejected() {
-        assertNull(SettingsBackup.parse("BLBK\t2\ncustom_names\tvalue\n"));
+        assertNull(SettingsBackup.parse("BLBK\t3\ncustom_names\tvalue\n"));
     }
 }
