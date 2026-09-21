@@ -11,6 +11,7 @@ import static org.junit.Assert.fail;
 import android.app.AlertDialog;
 import android.content.Context;
 import android.os.SystemClock;
+import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
@@ -139,6 +140,32 @@ public class LauncherCustomizationTest {
                 assertEquals(expectedSpacing, inputContainer.getPaddingRight());
                 assertTrue(inputContainer.getWidth() > input.getWidth());
                 assertTrue(dialog.getButton(AlertDialog.BUTTON_NEGATIVE).performClick());
+            });
+        }
+    }
+
+    @Test
+    public void dpadUp_fromFirstGridRow_returnsDirectlyToMatchingHomeFavorite() {
+        try (ActivityScenario<LauncherActivity> scenario =
+                     ActivityScenario.launch(LauncherActivity.class)) {
+            View originalHomeCell = focusHomeCell(scenario);
+            AppInfo expectedFavorite = (AppInfo) field(originalHomeCell, "boundApp");
+
+            scenario.onActivity(activity -> invoke(activity, "openDrawer"));
+            View drawer = awaitVisibleViewField(scenario, "drawer");
+            View gridCell = awaitFocusedCell(scenario, "DrawerCell");
+            scenario.onActivity(activity -> assertTrue(gridCell.dispatchKeyEvent(
+                    new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DPAD_UP))));
+
+            View returnedHomeCell = awaitFocusedCell(scenario, "CellView");
+            awaitValue(scenario, "closed drawer", activity ->
+                    drawer.getVisibility() != View.VISIBLE ? drawer : null);
+            scenario.onActivity(activity -> {
+                AppInfo returnedFavorite = (AppInfo) field(returnedHomeCell, "boundApp");
+                assertNotNull(returnedFavorite);
+                assertEquals(expectedFavorite.packageName, returnedFavorite.packageName);
+                assertEquals(View.VISIBLE,
+                        ((View) field(activity, "shelf")).getVisibility());
             });
         }
     }

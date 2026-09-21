@@ -5743,8 +5743,19 @@ public class LauncherActivity extends Activity {
                             return true;
                         case KeyEvent.KEYCODE_DPAD_UP:
                             int up = HomeDrawerModel.navUp(boundIndex, size, hc);
-                            if (up == HomeDrawerModel.CLOSE_DRAWER) closeDrawer();
-                            else requestFocusOnIndex(up, held);
+                            if (up == HomeDrawerModel.CLOSE_DRAWER) {
+                                closeDrawer();
+                            } else if (HomeDrawerModel.shouldCloseOnNavUp(
+                                    boundIndex, up, size, hc)) {
+                                // Crossing into row 0 returns directly to the
+                                // bottom home bar. Seed the destination before
+                                // closeDrawer captures it so the matching
+                                // favorite receives focus without an extra UP.
+                                focusedIndex = up;
+                                closeDrawer();
+                            } else {
+                                requestFocusOnIndex(up, held);
+                            }
                             return true;
                         case KeyEvent.KEYCODE_BACK:
                             closeDrawer(); return true;

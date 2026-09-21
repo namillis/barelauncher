@@ -121,6 +121,21 @@ public class HomeDrawerModelTest {
         assertEquals(2, HomeDrawerModel.navUp(7, size, hc));
     }
 
+    @Test public void nav_upEnteringFavoritesClosesDrawerImmediately() {
+        int size = 20, hc = 5;
+        int homeTarget = HomeDrawerModel.navUp(7, size, hc);
+        assertEquals(2, homeTarget);
+        assertEquals(true, HomeDrawerModel.shouldCloseOnNavUp(
+                7, homeTarget, size, hc));
+
+        int gridTarget = HomeDrawerModel.navUp(13, size, hc);
+        assertEquals(7, gridTarget);
+        assertEquals(false, HomeDrawerModel.shouldCloseOnNavUp(
+                13, gridTarget, size, hc));
+        assertEquals(false, HomeDrawerModel.shouldCloseOnNavUp(
+                6, HomeDrawerModel.navUp(6, size, 0), size, 0));
+    }
+
     @Test public void nav_down_snapsToShorterLastRow() {
         int size = 20, hc = 5; // rows: 5, 6, 6, 3 ; last row cols 0..2
         // home col4 (index 4) DOWN → row1 col4 (index 9)

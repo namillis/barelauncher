@@ -177,6 +177,17 @@ final class HomeDrawerModel {
         return indexAt(targetRow, targetCol, size, homeCount);
     }
 
+    /** Whether an UP result crosses from the app grid into the mirrored home
+     *  row. The caller closes the drawer and transfers focus directly to the
+     *  matching bottom favorite instead of briefly focusing row 0 in-grid. */
+    static boolean shouldCloseOnNavUp(int index, int targetIndex,
+                                      int size, int homeCount) {
+        homeCount = clampHomeCount(homeCount, size);
+        return homeCount > 0
+                && index >= homeCount && index < size
+                && targetIndex >= 0 && targetIndex < homeCount;
+    }
+
     /** DOWN within the drawer. Moves to the cell directly below, snapping to
      *  the nearest existing cell when the row below is shorter. Stays put when
      *  already on the last row. */
