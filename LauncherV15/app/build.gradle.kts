@@ -469,8 +469,11 @@ android {
         // Bumped 40 → 41: 2.4.5 restores launcher focus only after Rename
         // dismisses and isolates dialog tests from context-menu animation.
         // SemVer PATCH — dialog focus continuity and test isolation.
-        versionCode   = 41
-        versionName   = "2.4.5"
+        // Bumped 41 → 42: 2.4.6 makes every Rename action explicitly
+        // D-pad-focusable instead of relying on ROM touch-mode defaults.
+        // SemVer PATCH — consistent dialog navigation across TV versions.
+        versionCode   = 42
+        versionName   = "2.4.6"
         resourceConfigurations += listOf("en")
 
         // Instrumentation test runner. Required so :app:connectedDebugAndroidTest

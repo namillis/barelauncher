@@ -7,6 +7,14 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+## [2.4.6] — 2026-09-21
+
+### Fixed
+
+- **Save, Cancel, and Reset are always reachable with a TV remote.** Rename now
+  marks each action explicitly focusable in touch mode when the dialog opens,
+  avoiding API 26 and ROM-specific AlertDialog defaults.
+
 ## [2.4.5] — 2026-09-21
 
 ### Fixed

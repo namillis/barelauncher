@@ -10071,6 +10071,21 @@ public class LauncherActivity extends Activity {
             }
         });
         dialog.setOnShowListener(ignored -> {
+            View save = dialog.getButton(AlertDialog.BUTTON_POSITIVE);
+            View cancel = dialog.getButton(AlertDialog.BUTTON_NEGATIVE);
+            View reset = dialog.getButton(AlertDialog.BUTTON_NEUTRAL);
+            if (save != null) {
+                save.setFocusable(true);
+                save.setFocusableInTouchMode(true);
+            }
+            if (cancel != null) {
+                cancel.setFocusable(true);
+                cancel.setFocusableInTouchMode(true);
+            }
+            if (reset != null) {
+                reset.setFocusable(true);
+                reset.setFocusableInTouchMode(true);
+            }
             input.requestFocus();
             Window window = dialog.getWindow();
             if (window != null) {
