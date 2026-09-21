@@ -1359,25 +1359,27 @@ public class LauncherActivity extends Activity {
         // Clearing it up front means the veil fades over an already-sharp
         // wallpaper, and it drops the blur a few frames earlier (cheaper).
         applyDrawerBlur(false);
-        // Start the drawer's downward fade. close() hides the ring up front so
-        // it can't trail the slide.
-        d.close(null);
 
-        // Restore the home surface IMMEDIATELY, concurrently with the fade —
-        // not in the fade's end-action. The shelf + clock + toolbar cross-fade
-        // in behind the still-translucent, fading drawer, which eliminates the
-        // hard "pop"/blink the old end-of-fade restore produced. Focus + the
-        // selection ring land on the destination home cell right away, so the
-        // ring no longer lingers at the old drawer slot for a beat before
-        // dropping to the home row.
+        // Resolve the destination before starting the fade so close() can
+        // reassert it after the drawer becomes GONE. We still restore focus
+        // immediately for the cross-fade; the completion callback closes the
+        // framework race where a still-visible drawer can reclaim that focus.
         RecyclingShelfView s2 = shelf;
-        if (s2 == null || destroyed) return;
+        if (s2 == null || destroyed) {
+            d.close(null);
+            return;
+        }
         final List<AppInfo> visibleSnapshot = new ArrayList<>(buildVisibleList());
         resolveHomeCount(visibleSnapshot.size());
         final int hc = effectiveHomeCount(visibleSnapshot.size());
         setHomeChromeVisible(true);             // restore toolbar + clock
         s2.setVisibility(View.VISIBLE);         // restore the home shelf hidden on open
         if (hc <= 0 || visibleSnapshot.isEmpty()) {
+            d.close(() -> {
+                if (destroyed) return;
+                View nb = netBtn;
+                if (nb != null) nb.requestFocus();
+            });
             pushHomeRow(s2, visibleSnapshot, hc);   // clears the shelf
             RingView rv = ringView; if (rv != null) rv.setVisibility(View.INVISIBLE);
             View nb = netBtn; if (nb != null) nb.requestFocus();
@@ -1386,7 +1388,13 @@ public class LauncherActivity extends Activity {
         // Land focus on the drawer's app when it is a home app, else the
         // nearest home app. Seed focusedIndex so the shelf's setApps posts
         // its focus request onto the right cell.
-        int homeIdx = (drawerFocus >= 0 && drawerFocus < hc) ? drawerFocus : Math.max(0, hc - 1);
+        final int homeIdx = (drawerFocus >= 0 && drawerFocus < hc)
+                ? drawerFocus : Math.max(0, hc - 1);
+        d.close(() -> {
+            if (!destroyed && shelf == s2) {
+                s2.requestFocusOnIndex(homeIdx, true);
+            }
+        });
         s2.focusedIndex = homeIdx;
         s2.snapNextFocus = true;   // calm, no focus-bounce on return
         // Cross-fade the home surface in as the drawer slides down — mirrors

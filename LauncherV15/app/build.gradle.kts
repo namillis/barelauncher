@@ -463,8 +463,11 @@ android {
         // Bumped 38 → 39: 2.4.3 makes API 26 release validation establish
         // Rename-dialog focus explicitly instead of racing framework focus.
         // SemVer PATCH — test reliability only; shipped behavior is unchanged.
-        versionCode   = 39
-        versionName   = "2.4.3"
+        // Bumped 39 → 40: 2.4.4 reasserts home focus after drawer close
+        // and synchronizes the corresponding settings/navigation device tests.
+        // SemVer PATCH — focus continuity and release-validation reliability.
+        versionCode   = 40
+        versionName   = "2.4.4"
         resourceConfigurations += listOf("en")
 
         // Instrumentation test runner. Required so :app:connectedDebugAndroidTest
