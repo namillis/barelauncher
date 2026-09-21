@@ -19,6 +19,7 @@ import android.view.WindowManager;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputConnection;
 import android.widget.EditText;
+import android.widget.FrameLayout;
 
 import androidx.test.core.app.ActivityScenario;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
@@ -284,6 +285,31 @@ public class LauncherCustomizationTest {
     }
 
     @Test
+    public void drawerOpen_continuesWhenLegacyBlurFrameNeverArrives() {
+        try (ActivityScenario<LauncherActivity> scenario =
+                     ActivityScenario.launch(LauncherActivity.class)) {
+            focusHomeCell(scenario);
+            scenario.onActivity(activity -> {
+                FrameLayout originalRoot = (FrameLayout) field(activity, "root");
+                FrameLayout stalledFrameSource = new FrameLayout(activity) {
+                    @Override
+                    public void postOnAnimation(Runnable action) {
+                        // Simulate a legacy compositor that never supplies the requested frame.
+                    }
+                };
+                setField(activity, "root", stalledFrameSource);
+                try {
+                    invoke(activity, "openDrawer");
+                } finally {
+                    setField(activity, "root", originalRoot);
+                }
+            });
+
+            awaitVisibleViewField(scenario, "drawer");
+        }
+    }
+
+    @Test
     public void dpadUp_fromFirstGridRow_returnsDirectlyToMatchingHomeFavorite() {
         try (ActivityScenario<LauncherActivity> scenario =
                      ActivityScenario.launch(LauncherActivity.class)) {
@@ -518,6 +544,16 @@ public class LauncherCustomizationTest {
             Field field = target.getClass().getDeclaredField(name);
             field.setAccessible(true);
             return field.get(target);
+        } catch (ReflectiveOperationException e) {
+            throw new AssertionError(e);
+        }
+    }
+
+    private static void setField(Object target, String name, Object value) {
+        try {
+            Field field = target.getClass().getDeclaredField(name);
+            field.setAccessible(true);
+            field.set(target, value);
         } catch (ReflectiveOperationException e) {
             throw new AssertionError(e);
         }

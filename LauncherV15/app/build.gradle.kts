@@ -475,8 +475,11 @@ android {
         // Bumped 42 → 43: 2.4.7 synchronizes cold-start device-test setup
         // with observable shelf focus and content-layout postconditions.
         // SemVer PATCH — deterministic release validation on cold emulators.
-        versionCode   = 43
-        versionName   = "2.4.7"
+        // Bumped 43 → 44: 2.4.8 bounds legacy PixelCopy preparation so an
+        // unavailable compositor frame cannot block drawer navigation.
+        // SemVer PATCH — reliable drawer opening on API 26-30 devices.
+        versionCode   = 44
+        versionName   = "2.4.8"
         resourceConfigurations += listOf("en")
 
         // Instrumentation test runner. Required so :app:connectedDebugAndroidTest
