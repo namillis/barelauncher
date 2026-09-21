@@ -11,6 +11,7 @@ import static org.junit.Assert.fail;
 import android.app.AlertDialog;
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.content.res.Configuration;
 import android.os.SystemClock;
 import android.view.KeyEvent;
 import android.view.View;
@@ -56,7 +57,7 @@ public class LauncherCustomizationTest {
     @Test
     public void contextMenu_forApp_exposesRename() {
         try (ActivityScenario<LauncherActivity> scenario =
-                     ActivityScenario.launch(LauncherActivity.class)) {
+                     launchSettledLauncher()) {
             View homeCell = focusHomeCell(scenario);
             scenario.onActivity(activity -> assertTrue(homeCell.performLongClick()));
 
@@ -68,7 +69,7 @@ public class LauncherCustomizationTest {
     @Test
     public void renameDialog_hasFocusedInputAndWorkingSaveResetButtons() {
         try (ActivityScenario<LauncherActivity> scenario =
-                     ActivityScenario.launch(LauncherActivity.class)) {
+                     launchSettledLauncher()) {
             View homeCell = focusHomeCell(scenario);
             AppInfo originalApp = (AppInfo) field(homeCell, "boundApp");
             String identity = originalApp.packageName;
@@ -97,7 +98,7 @@ public class LauncherCustomizationTest {
     @Test
     public void renameDialog_imeDoneHidesKeyboardAndFocusesSave() {
         try (ActivityScenario<LauncherActivity> scenario =
-                     ActivityScenario.launch(LauncherActivity.class)) {
+                     launchSettledLauncher()) {
             AlertDialog dialog = openRenameDialog(scenario, focusHomeCell(scenario), false);
             scenario.onActivity(activity -> {
                 EditText input = (EditText) field(activity, "renameInput");
@@ -129,7 +130,7 @@ public class LauncherCustomizationTest {
     @Test
     public void renameDialog_inputHasBalancedHorizontalSpacing() {
         try (ActivityScenario<LauncherActivity> scenario =
-                     ActivityScenario.launch(LauncherActivity.class)) {
+                     launchSettledLauncher()) {
             AlertDialog dialog = openRenameDialog(
                     scenario, focusHomeCell(scenario), false);
             scenario.onActivity(activity -> {
@@ -162,7 +163,7 @@ public class LauncherCustomizationTest {
         assertTrue(preferences.edit().putInt(columnsKey, 6).putInt(cornerKey, 20).commit());
 
         try (ActivityScenario<LauncherActivity> scenario =
-                     ActivityScenario.launch(LauncherActivity.class)) {
+                     launchSettledLauncher()) {
             scenario.onActivity(activity -> invoke(activity, "showSettingsPanel"));
             awaitVisibleViewField(scenario, "settingsOverlay");
 
@@ -244,7 +245,7 @@ public class LauncherCustomizationTest {
                 .putInt(homeCountKey, 6).putString(hiddenKey, "").commit());
 
         try (ActivityScenario<LauncherActivity> scenario =
-                     ActivityScenario.launch(LauncherActivity.class)) {
+                     launchSettledLauncher()) {
             awaitValue(scenario, "loaded four-column layout", activity -> {
                 Object shelf = field(activity, "shelf");
                 @SuppressWarnings("unchecked")
@@ -287,7 +288,7 @@ public class LauncherCustomizationTest {
     @Test
     public void drawerOpen_continuesWhenLegacyBlurFrameNeverArrives() {
         try (ActivityScenario<LauncherActivity> scenario =
-                     ActivityScenario.launch(LauncherActivity.class)) {
+                     launchSettledLauncher()) {
             focusHomeCell(scenario);
             scenario.onActivity(activity -> {
                 FrameLayout originalRoot = (FrameLayout) field(activity, "root");
@@ -312,7 +313,7 @@ public class LauncherCustomizationTest {
     @Test
     public void dpadUp_fromFirstGridRow_returnsDirectlyToMatchingHomeFavorite() {
         try (ActivityScenario<LauncherActivity> scenario =
-                     ActivityScenario.launch(LauncherActivity.class)) {
+                     launchSettledLauncher()) {
             View originalHomeCell = focusHomeCell(scenario);
             AppInfo expectedFavorite = (AppInfo) field(originalHomeCell, "boundApp");
 
@@ -342,7 +343,7 @@ public class LauncherCustomizationTest {
     @Test
     public void refreshArtwork_whileDrawerVisible_keepsFocusInDrawer() {
         try (ActivityScenario<LauncherActivity> scenario =
-                     ActivityScenario.launch(LauncherActivity.class)) {
+                     launchSettledLauncher()) {
             focusHomeCell(scenario);
             scenario.onActivity(activity -> invoke(activity, "openDrawer"));
             View drawer = awaitVisibleViewField(scenario, "drawer");
@@ -366,7 +367,7 @@ public class LauncherCustomizationTest {
     @Test
     public void focusedHomeAndGridTiles_castShadowAndClearItOnBlur() {
         try (ActivityScenario<LauncherActivity> scenario =
-                     ActivityScenario.launch(LauncherActivity.class)) {
+                     launchSettledLauncher()) {
             View homeCell = focusHomeCell(scenario);
             float expectedShadow = awaitValue(scenario, "configured focus shadow", activity ->
                     Math.round(((Integer) staticField(LauncherActivity.class,
@@ -386,6 +387,26 @@ public class LauncherCustomizationTest {
             scenario.onActivity(activity -> gridCell.setFocusable(false));
             awaitValue(scenario, "shadow removed from blurred grid tile", activity ->
                     Math.abs(gridCell.getTranslationZ()) < 0.1f ? gridCell : null);
+        }
+    }
+
+    private static ActivityScenario<LauncherActivity> launchSettledLauncher() {
+        ActivityScenario<LauncherActivity> scenario =
+                ActivityScenario.launch(LauncherActivity.class);
+        try {
+            awaitValue(scenario, "laid-out landscape LauncherActivity", activity -> {
+                View root = activity.findViewById(android.R.id.content);
+                return activity.getResources().getConfiguration().orientation
+                        == Configuration.ORIENTATION_LANDSCAPE
+                        && root != null
+                        && root.getWidth() > root.getHeight()
+                        && !activity.isChangingConfigurations()
+                        ? activity : null;
+            });
+            return scenario;
+        } catch (RuntimeException | Error error) {
+            scenario.close();
+            throw error;
         }
     }
 

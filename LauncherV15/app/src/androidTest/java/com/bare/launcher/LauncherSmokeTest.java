@@ -7,6 +7,7 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
+import android.content.res.Configuration;
 import android.os.SystemClock;
 import android.view.View;
 
@@ -49,11 +50,11 @@ import java.util.concurrent.atomic.AtomicReference;
  *         flake; on a fast device the same 500 ms is wasted.</li>
  * </ul>
  * {@code ActivityScenario} is the modern recommended primitive. The test drains
- * the main looper, then checks the observable root dimensions until the first
- * layout completes. This avoids treating an idle queue as proof that rendering
- * has finished on a cold emulator. The test compiles against
- * {@code androidx.test.core} only, so the {@code androidx.test:rules} dependency
- * is no longer needed.
+ * the main looper, then checks the observable root dimensions until the final
+ * landscape activity completes layout. This avoids treating an idle queue or
+ * the transient portrait instance as proof that startup has finished on a cold
+ * emulator. The test compiles against {@code androidx.test.core} only, so the
+ * {@code androidx.test:rules} dependency is no longer needed.
  */
 @RunWith(AndroidJUnit4.class)
 @LargeTest
@@ -89,7 +90,7 @@ public class LauncherSmokeTest {
         }
     }
 
-    /** Wait for the first real layout; an idle looper can still precede rendering on a cold AVD. */
+    /** Wait for the final landscape layout; API 26 recreates the first portrait activity. */
     private static View awaitLaidOutContentView(
             ActivityScenario<LauncherActivity> scenario) {
         long deadline = SystemClock.uptimeMillis() + WAIT_TIMEOUT_MS;
@@ -100,7 +101,11 @@ public class LauncherSmokeTest {
                 assertNotNull("LauncherActivity should be created", activity);
                 View root = activity.findViewById(android.R.id.content);
                 assertNotNull("content view present", root);
-                if (root.getWidth() > 0 && root.getHeight() > 0) {
+                if (activity.getResources().getConfiguration().orientation
+                        == Configuration.ORIENTATION_LANDSCAPE
+                        && root.getWidth() > root.getHeight()
+                        && root.getHeight() > 0
+                        && !activity.isChangingConfigurations()) {
                     result.set(root);
                 }
             });
