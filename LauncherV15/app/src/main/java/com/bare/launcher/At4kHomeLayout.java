@@ -11,12 +11,17 @@ final class At4kHomeLayout {
     private static final float GRID_TOP_FRACTION = 0.205f;
     private static final float LABEL_AREA_FRACTION = 0.04f;
     private static final float ROW_GAP_FRACTION = 0.092f;
-    private static final float TILE_CORNER_FRACTION = 0.16f;
 
     private At4kHomeLayout() {
     }
 
     static Metrics calculate(int screenWidthPx, int screenHeightPx, float density) {
+        return calculate(screenWidthPx, screenHeightPx, density,
+                LayoutOptions.DEFAULT_COLUMNS, LayoutOptions.DEFAULT_CORNER_PERCENT);
+    }
+
+    static Metrics calculate(int screenWidthPx, int screenHeightPx, float density,
+                             int columns, int cornerPercent) {
         if (screenWidthPx <= 0) {
             throw new IllegalArgumentException("screenWidthPx must be positive");
         }
@@ -26,12 +31,18 @@ final class At4kHomeLayout {
         if (density <= 0.0f || !Float.isFinite(density)) {
             throw new IllegalArgumentException("density must be finite and positive");
         }
+        columns = LayoutOptions.sanitizeColumns(columns);
         int gridHorizontalMarginPx = Math.max(dp(24, density), Math.round(screenWidthPx * GRID_HORIZONTAL_MARGIN_FRACTION));
         int columnGapPx = Math.max(dp(12, density), Math.round(screenWidthPx * COLUMN_GAP_FRACTION));
-        int tileWidthPx = Math.max(dp(64, density), ((screenWidthPx - (gridHorizontalMarginPx * 2)) - (columnGapPx * 5)) / COLUMNS);
+        int tileWidthPx = Math.max(dp(64, density), ((screenWidthPx - (gridHorizontalMarginPx * 2)) - (columnGapPx * (columns - 1))) / columns);
         int tileHeightPx = Math.round((tileWidthPx * 2.0f) / 3.0f);
         int labelAreaPx = Math.max(dp(28, density), Math.round(screenHeightPx * LABEL_AREA_FRACTION));
-        return new Metrics(gridHorizontalMarginPx, columnGapPx, tileWidthPx, tileHeightPx, Math.round(tileHeightPx * TILE_CORNER_FRACTION), tileHeightPx + labelAreaPx, Math.max(dp(72, density), Math.round(screenHeightPx * GRID_TOP_FRACTION)), Math.max(dp(24, density), Math.round(screenHeightPx * ROW_GAP_FRACTION)), Math.max(dp(24, density), Math.round(screenWidthPx * FAVORITES_PLATE_MARGIN_FRACTION)), Math.max(dp(12, density), Math.round(screenHeightPx * FAVORITES_PLATE_PADDING_FRACTION)), Math.max(dp(48, density), Math.round(screenHeightPx * BOTTOM_PADDING_FRACTION)));
+        return new Metrics(gridHorizontalMarginPx, columnGapPx, tileWidthPx, tileHeightPx, cornerRadiusPx(tileHeightPx, cornerPercent), tileHeightPx + labelAreaPx, Math.max(dp(72, density), Math.round(screenHeightPx * GRID_TOP_FRACTION)), Math.max(dp(24, density), Math.round(screenHeightPx * ROW_GAP_FRACTION)), Math.max(dp(24, density), Math.round(screenWidthPx * FAVORITES_PLATE_MARGIN_FRACTION)), Math.max(dp(12, density), Math.round(screenHeightPx * FAVORITES_PLATE_PADDING_FRACTION)), Math.max(dp(48, density), Math.round(screenHeightPx * BOTTOM_PADDING_FRACTION)));
+    }
+
+    static int cornerRadiusPx(int tileHeightPx, int cornerPercent) {
+        return Math.round(Math.max(0, tileHeightPx)
+                * LayoutOptions.sanitizeCornerPercent(cornerPercent) / 100f);
     }
 
     static boolean shouldBlurBackground(int focusedIndex, int favoritesCount) {

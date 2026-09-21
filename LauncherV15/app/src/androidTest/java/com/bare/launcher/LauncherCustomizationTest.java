@@ -10,6 +10,7 @@ import static org.junit.Assert.fail;
 
 import android.app.AlertDialog;
 import android.content.Context;
+import android.content.SharedPreferences;
 import android.os.SystemClock;
 import android.view.KeyEvent;
 import android.view.View;
@@ -141,6 +142,117 @@ public class LauncherCustomizationTest {
                 assertTrue(inputContainer.getWidth() > input.getWidth());
                 assertTrue(dialog.getButton(AlertDialog.BUTTON_NEGATIVE).performClick());
             });
+        }
+    }
+
+    @Test
+    public void layoutSettings_exposesColumnsAndRoundnessControls() {
+        Context context = getInstrumentation().getTargetContext();
+        String prefsName = (String) staticField(LauncherActivity.class, "PREFS");
+        String columnsKey = (String) staticField(LauncherActivity.class, "KEY_LAYOUT_COLUMNS");
+        String cornerKey = (String) staticField(
+                LauncherActivity.class, "KEY_CARD_CORNER_PERCENT");
+        SharedPreferences preferences = context.getSharedPreferences(
+                prefsName, Context.MODE_PRIVATE);
+        boolean hadColumns = preferences.contains(columnsKey);
+        boolean hadCorner = preferences.contains(cornerKey);
+        int oldColumns = preferences.getInt(columnsKey, LayoutOptions.DEFAULT_COLUMNS);
+        int oldCorner = preferences.getInt(cornerKey, LayoutOptions.DEFAULT_CORNER_PERCENT);
+        assertTrue(preferences.edit().putInt(columnsKey, 6).putInt(cornerKey, 20).commit());
+
+        try (ActivityScenario<LauncherActivity> scenario =
+                     ActivityScenario.launch(LauncherActivity.class)) {
+            scenario.onActivity(activity -> {
+                invoke(activity, "showSettingsPanel");
+                invoke(activity, "activateSettingsRowId",
+                        new Class<?>[] {int.class},
+                        staticField(LauncherActivity.class, "SR_LAYOUT_MENU"));
+                invoke(activity, "stepLayoutColumns", new Class<?>[] {int.class}, -1);
+                invoke(activity, "stepCardCorner", new Class<?>[] {int.class}, -1);
+            });
+            getInstrumentation().waitForIdleSync();
+
+            scenario.onActivity(activity -> {
+                android.widget.LinearLayout column = (android.widget.LinearLayout)
+                        field(activity, "settingsColumn");
+                assertEquals(2, column.getChildCount());
+                assertEquals(activity.getString(R.string.settings_row_layout_columns),
+                        ((android.widget.TextView) ((ViewGroup) column.getChildAt(0))
+                                .getChildAt(0)).getText().toString());
+                assertEquals("< 5 >", ((android.widget.TextView)
+                        ((ViewGroup) column.getChildAt(0)).getChildAt(1)).getText().toString());
+                assertEquals("< 18% >", ((android.widget.TextView)
+                        ((ViewGroup) column.getChildAt(1)).getChildAt(1)).getText().toString());
+                assertEquals(5, preferences.getInt(columnsKey, -1));
+                assertEquals(18, preferences.getInt(cornerKey, -1));
+                assertTrue((Boolean) field(activity, "layoutApplyPending"));
+            });
+        } finally {
+            SharedPreferences.Editor restore = preferences.edit();
+            if (hadColumns) restore.putInt(columnsKey, oldColumns);
+            else restore.remove(columnsKey);
+            if (hadCorner) restore.putInt(cornerKey, oldCorner);
+            else restore.remove(cornerKey);
+            assertTrue(restore.commit());
+        }
+    }
+
+    @Test
+    public void fourColumnLayout_demotesOverflowFavoritesAndUsesSquareCards() {
+        Context context = getInstrumentation().getTargetContext();
+        String prefsName = (String) staticField(LauncherActivity.class, "PREFS");
+        String columnsKey = (String) staticField(LauncherActivity.class, "KEY_LAYOUT_COLUMNS");
+        String cornerKey = (String) staticField(
+                LauncherActivity.class, "KEY_CARD_CORNER_PERCENT");
+        String homeCountKey = (String) staticField(LauncherActivity.class, "KEY_HOME_COUNT");
+        String hiddenKey = (String) staticField(LauncherActivity.class, "KEY_HIDDEN");
+        SharedPreferences preferences = context.getSharedPreferences(
+                prefsName, Context.MODE_PRIVATE);
+        boolean hadColumns = preferences.contains(columnsKey);
+        boolean hadCorner = preferences.contains(cornerKey);
+        boolean hadHomeCount = preferences.contains(homeCountKey);
+        boolean hadHidden = preferences.contains(hiddenKey);
+        int oldColumns = preferences.getInt(columnsKey, LayoutOptions.DEFAULT_COLUMNS);
+        int oldCorner = preferences.getInt(cornerKey, LayoutOptions.DEFAULT_CORNER_PERCENT);
+        int oldHomeCount = preferences.getInt(homeCountKey, -1);
+        String oldHidden = preferences.getString(hiddenKey, "");
+        assertTrue(preferences.edit().putInt(columnsKey, 4).putInt(cornerKey, 0)
+                .putInt(homeCountKey, 6).putString(hiddenKey, "").commit());
+
+        try (ActivityScenario<LauncherActivity> scenario =
+                     ActivityScenario.launch(LauncherActivity.class)) {
+            awaitValue(scenario, "loaded four-column layout", activity -> {
+                Object shelf = field(activity, "shelf");
+                @SuppressWarnings("unchecked")
+                java.util.List<AppInfo> displayed = (java.util.List<AppInfo>)
+                        field(shelf, "displayed");
+                return ((Integer) field(activity, "homeCount")) >= 0
+                        && !displayed.isEmpty() ? shelf : null;
+            });
+            scenario.onActivity(activity -> {
+                Object shelf = field(activity, "shelf");
+                @SuppressWarnings("unchecked")
+                java.util.List<AppInfo> displayed = (java.util.List<AppInfo>)
+                        field(shelf, "displayed");
+                assertEquals("selected columns", 4,
+                        ((Integer) field(activity, "layoutColumns")).intValue());
+                assertEquals("overflow favorites demoted", 4,
+                        ((Integer) field(activity, "homeCount")).intValue());
+                assertEquals("shelf renders four favorites", 4, displayed.size());
+                assertEquals("zero percent gives square cards", 0,
+                        ((Integer) field(activity, "tileCornerPx")).intValue());
+            });
+        } finally {
+            SharedPreferences.Editor restore = preferences.edit();
+            if (hadColumns) restore.putInt(columnsKey, oldColumns);
+            else restore.remove(columnsKey);
+            if (hadCorner) restore.putInt(cornerKey, oldCorner);
+            else restore.remove(cornerKey);
+            if (hadHomeCount) restore.putInt(homeCountKey, oldHomeCount);
+            else restore.remove(homeCountKey);
+            if (hadHidden) restore.putString(hiddenKey, oldHidden);
+            else restore.remove(hiddenKey);
+            assertTrue(restore.commit());
         }
     }
 

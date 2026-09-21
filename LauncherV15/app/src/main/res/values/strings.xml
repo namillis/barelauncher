@@ -55,6 +55,11 @@
          at the bottom of the keymap card. -->
     <string name="settings_row_manage_hidden">Manage hidden apps</string>
     <string name="settings_row_button_shortcuts">Button shortcuts</string>
+    <string name="settings_row_layout_menu">Layout</string>
+    <string name="settings_row_layout_columns">Icons per row</string>
+    <string name="settings_row_card_corner">Icon roundness</string>
+    <string name="settings_value_columns">&lt; %1$d &gt;</string>
+    <string name="settings_value_percent">&lt; %1$d%% &gt;</string>
     <string name="settings_row_set_wallpaper">Set wallpaper</string>
     <string name="settings_row_wallpaper_menu">Wallpaper / Slideshow</string>
     <string name="settings_row_backup_menu">Backup &amp; restore</string>

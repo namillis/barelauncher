@@ -452,8 +452,11 @@ android {
         // blurred app grid, removes the separator line between favorites and
         // the remaining apps, and returns home as soon as UP reaches favorites.
         // SemVer PATCH — focused UI continuity refinement.
-        versionCode   = 35
-        versionName   = "2.3.4"
+        // Bumped 35 → 36: 2.4.0 adds Layout settings for 4–7 icons per row
+        // and 0–30% app-card corner radius while preserving 3:2 geometry.
+        // SemVer MINOR — additive user-facing layout customization.
+        versionCode   = 36
+        versionName   = "2.4.0"
         resourceConfigurations += listOf("en")
 
         // Instrumentation test runner. Required so :app:connectedDebugAndroidTest

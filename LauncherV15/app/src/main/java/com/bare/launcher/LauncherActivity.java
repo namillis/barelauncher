@@ -82,12 +82,12 @@ public class LauncherActivity extends Activity {
 
     private static final int    ICON_DP        = 80;   // round chip/list icon cache size
     private static final int    RING_STROKE_DP = 3;
-    // v1.5.0 TV-style 5:3 banner tiles, sized dynamically from the
-    // screen width so exactly 6 fit per row on ANY TV (see computeTileDims()).
+    // TV-style 3:2 banner tiles, sized dynamically from the screen width and
+    // selected 4–7 column count (see computeTileDims()).
     // Volatile: written on the UI thread (onCreate / config change), read on
     // the icon executor inside loadBannerBlocking.
     private volatile int        tileWpx      = 0;   // banner / cell width
-    private volatile int        bannerHpx    = 0;   // banner height (5:3)
+    private volatile int        bannerHpx    = 0;   // banner height (3:2)
     private volatile int        tileCornerPx = 0;   // corner radius
     private volatile int        cellHpx      = 0;   // cell height (banner + focused label)
     /** Hide-apps vertical list: per-row height and how many rows are visible
@@ -125,6 +125,8 @@ public class LauncherActivity extends Activity {
      *  single source of truth for ordering; this key only records where the
      *  home/drawer boundary sits. */
     private static final String KEY_HOME_COUNT = "home_count";
+    private static final String KEY_LAYOUT_COLUMNS = "layout_columns";
+    private static final String KEY_CARD_CORNER_PERCENT = "card_corner_percent";
     // Persisted remote-key→app shortcut map. Format: "kc=pkg,kc=pkg,...".
     // Keys are raw Android keycode integers (e.g. 183 = KEYCODE_PROG_RED).
     // Loaded once at startup into the in-memory keyMap SparseArray; every
@@ -261,8 +263,13 @@ public class LauncherActivity extends Activity {
     /** Number of leading visible apps that are "home" apps. {@code -1} until
      *  resolved from {@link #KEY_HOME_COUNT} (or its default) the first time
      *  the app list is known — see {@link #resolveHomeCount(int)}. Always
-     *  clamped to {@code [0, min(8, visibleCount)]} before use. */
+     *  clamped to {@code [0, min(layoutColumns, visibleCount)]} before use. */
     private int                 homeCount = -1;
+    private int layoutColumns = LayoutOptions.DEFAULT_COLUMNS;
+    private int cardCornerPercent = LayoutOptions.DEFAULT_CORNER_PERCENT;
+    private int appliedLayoutColumns = LayoutOptions.DEFAULT_COLUMNS;
+    private int appliedCardCornerPercent = LayoutOptions.DEFAULT_CORNER_PERCENT;
+    private boolean layoutApplyPending = false;
     // Wallpaper rendering uses two stacked ImageViews. wallpaperFront is on
     // top (always visible to the user); wallpaperBack sits below and is the
     // staging slot used during a fade. Roles do NOT swap — the
@@ -865,10 +872,12 @@ public class LauncherActivity extends Activity {
      *  constant across the entire modal flow. */
     private View                        overlayBackdrop = null;
 
-    /** Settings panel "pages": the main list, plus the Wallpaper/Slideshow and
-     *  Backup/Restore sub-views. Navigating into a sub-page rebuilds the row
-     *  column; BACK returns to MAIN. */
-    private static final int SPAGE_MAIN = 0, SPAGE_WALLPAPER = 1, SPAGE_BACKUP = 2;
+    /** Settings panel pages: the main list, plus Layout,
+     *  Wallpaper/Slideshow, and Backup/Restore sub-views. Navigating into a
+     *  sub-page rebuilds the row column; BACK returns to MAIN unless a changed
+     *  Layout page closes to apply its new geometry. */
+    private static final int SPAGE_MAIN = 0, SPAGE_WALLPAPER = 1,
+            SPAGE_BACKUP = 2, SPAGE_LAYOUT = 3;
     private int settingsPage = SPAGE_MAIN;
 
     // Stable settings-row identifiers (NOT list positions — the panel is now
@@ -887,15 +896,20 @@ public class LauncherActivity extends Activity {
     private static final int SR_BACKUP             = 11;
     private static final int SR_RESTORE            = 12;
     private static final int SR_IDLE_HIDE          = 13;  // hide UI when idle (slideshow sub-page)
+    private static final int SR_LAYOUT_MENU        = 14;  // → SPAGE_LAYOUT
+    private static final int SR_LAYOUT_COLUMNS     = 15;
+    private static final int SR_CARD_CORNER        = 16;
 
     private static final int[] SROWS_MAIN = {
-            SR_HIDE_APPS, SR_KEYMAP, SR_WALLPAPER_MENU, SR_CLOCK,
+            SR_HIDE_APPS, SR_KEYMAP, SR_LAYOUT_MENU, SR_WALLPAPER_MENU, SR_CLOCK,
             SR_BACKUP_MENU, SR_SYSTEM, SR_ABOUT };
     private static final int[] SROWS_WALLPAPER = {
             SR_SET_WALLPAPER, SR_SLIDESHOW_FOLDER, SR_SLIDESHOW_DURATION,
             SR_SLIDESHOW_RESTART, SR_IDLE_HIDE };
     private static final int[] SROWS_BACKUP = {
             SR_BACKUP, SR_RESTORE };
+    private static final int[] SROWS_LAYOUT = {
+            SR_LAYOUT_COLUMNS, SR_CARD_CORNER };
 
     /** Main-list row to re-select when returning from a sub-page. */
     private int settingsReturnRowId = SR_WALLPAPER_MENU;
@@ -905,6 +919,7 @@ public class LauncherActivity extends Activity {
         switch (settingsPage) {
             case SPAGE_WALLPAPER: return SROWS_WALLPAPER;
             case SPAGE_BACKUP:    return SROWS_BACKUP;
+            case SPAGE_LAYOUT:    return SROWS_LAYOUT;
             default:              return SROWS_MAIN;
         }
     }
@@ -914,6 +929,9 @@ public class LauncherActivity extends Activity {
         switch (rowId) {
             case SR_HIDE_APPS:          return R.string.settings_row_manage_hidden;
             case SR_KEYMAP:             return R.string.settings_row_button_shortcuts;
+            case SR_LAYOUT_MENU:        return R.string.settings_row_layout_menu;
+            case SR_LAYOUT_COLUMNS:     return R.string.settings_row_layout_columns;
+            case SR_CARD_CORNER:        return R.string.settings_row_card_corner;
             case SR_WALLPAPER_MENU:     return R.string.settings_row_wallpaper_menu;
             case SR_CLOCK:              return R.string.settings_row_show_clock;
             case SR_BACKUP_MENU:        return R.string.settings_row_backup_menu;
@@ -933,6 +951,8 @@ public class LauncherActivity extends Activity {
     /** Settings rows that show a right-side state indicator. */
     private static boolean settingsRowHasIndicator(int rowId) {
         return rowId == SR_CLOCK
+            || rowId == SR_LAYOUT_COLUMNS
+            || rowId == SR_CARD_CORNER
             || rowId == SR_SLIDESHOW_FOLDER
             || rowId == SR_SLIDESHOW_DURATION
             || rowId == SR_SLIDESHOW_RESTART
@@ -943,6 +963,8 @@ public class LauncherActivity extends Activity {
      *  build time so the live value never clips the label. */
     private static String settingsIndicatorWidestText(int rowId) {
         switch (rowId) {
+            case SR_LAYOUT_COLUMNS:     return "< 7 >";
+            case SR_CARD_CORNER:        return "< 30% >";
             case SR_SLIDESHOW_FOLDER:   return "Not set";
             case SR_SLIDESHOW_DURATION: return "< 1.5 min >";   // widest bracketed label
             case SR_SLIDESHOW_RESTART:  return "Off";
@@ -1195,12 +1217,12 @@ public class LauncherActivity extends Activity {
         if (homeCount < 0) {
             int stored = prefs.getInt(KEY_HOME_COUNT, -1);
             homeCount = (stored < 0)
-                    ? HomeDrawerModel.defaultHomeCount(visibleCount)
-                    : HomeDrawerModel.clampHomeCount(stored, visibleCount);
+                    ? HomeDrawerModel.defaultHomeCount(layoutColumns, visibleCount)
+                    : HomeDrawerModel.clampHomeCount(layoutColumns, stored, visibleCount);
             if (homeCount < 1) homeCount = 1;   // never strand an empty home row
             saveHomeCount();
         } else {
-            int clamped = HomeDrawerModel.clampHomeCount(homeCount, visibleCount);
+            int clamped = HomeDrawerModel.clampHomeCount(layoutColumns, homeCount, visibleCount);
             if (clamped < 1) clamped = 1;
             if (clamped != homeCount) { homeCount = clamped; saveHomeCount(); }
         }
@@ -1231,7 +1253,7 @@ public class LauncherActivity extends Activity {
      *  would otherwise strand the user with no way back into the drawer. */
     private int effectiveHomeCount(int visibleCount) {
         if (visibleCount <= 0) return 0;
-        return Math.max(1, HomeDrawerModel.clampHomeCount(homeCount, visibleCount));
+        return Math.max(1, HomeDrawerModel.clampHomeCount(layoutColumns, homeCount, visibleCount));
     }
 
     /** Feed the bottom home row the first {@code hc} visible apps (the shelf
@@ -1297,7 +1319,7 @@ public class LauncherActivity extends Activity {
         // only row (few apps), navDown returns the same index so focus simply
         // stays on the favourite. Clamp the home index defensively.
         int homeIdx = Math.min(Math.max(0, s.focusedIndex), Math.max(0, hc - 1));
-        int focus = HomeDrawerModel.navDown(homeIdx, visible.size(), hc);
+        int focus = HomeDrawerModel.navDown(layoutColumns, homeIdx, visible.size(), hc);
         // Hide the home shelf while the drawer covers the screen so we never
         // draw both grids at once (the drawer's row 0 already mirrors the home
         // row). INVISIBLE (not GONE) avoids a relayout on open/close.
@@ -1648,6 +1670,8 @@ public class LauncherActivity extends Activity {
         requestWindowFeature(Window.FEATURE_NO_TITLE);
         DisplayMetrics dm = getResources().getDisplayMetrics();
         density = dm.density; screenW = dm.widthPixels; screenH = dm.heightPixels;
+        prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
+        loadLayoutOptions();
         computeTileDims();
         pm = getPackageManager();
         initShortcutLabels();
@@ -2171,7 +2195,7 @@ public class LauncherActivity extends Activity {
         density = dm.density;
         screenW = dm.widthPixels;
         screenH = dm.heightPixels;
-        computeTileDims();   // re-fit 6 tiles per row for the new screen width
+        computeTileDims();   // re-fit the selected column count to the new screen width
         // Forward the new screen size into the wallpaper controller so its
         // next decode caps to the new dimensions (e.g. HDMI swap on TV
         // changes both screenW and screenH).
@@ -4764,7 +4788,7 @@ public class LauncherActivity extends Activity {
 
         private static final int BUFFER_ROWS = 2;
 
-        private final ArrayList<DrawerCell>   pool     = new ArrayList<>(HomeDrawerModel.COLS * 4);
+        private final ArrayList<DrawerCell>   pool     = new ArrayList<>(layoutColumns * 4);
         private final SparseArray<DrawerCell> attached = new SparseArray<>();
         private final OverScroller scroller;
         private VelocityTracker velTracker;
@@ -4977,7 +5001,7 @@ public class LauncherActivity extends Activity {
         }
 
         private void recomputeContentHeight() {
-            int rows = HomeDrawerModel.rowCount(displayed.size(), hc());
+            int rows = HomeDrawerModel.rowCount(layoutColumns, displayed.size(), hc());
             contentH = topPad + blockHeight(rows) + bottomPad;
         }
 
@@ -4992,7 +5016,7 @@ public class LauncherActivity extends Activity {
          *  apps) the block is centred vertically for a balanced look;
          *  otherwise it starts at {@code topPad} and scrolls. */
         private int firstRowTop() {
-            int rows = HomeDrawerModel.rowCount(displayed.size(), hc());
+            int rows = HomeDrawerModel.rowCount(layoutColumns, displayed.size(), hc());
             int bh = blockHeight(rows);
             int vh = getHeight();
             if (vh > 0 && topPad + bh + bottomPad <= vh) {
@@ -5010,14 +5034,14 @@ public class LauncherActivity extends Activity {
 
         @Override protected void onLayout(boolean changed, int l, int t, int r, int b) {
             int w = r - l;
-            if (w > 0) gridLeft = Math.max(dp(24), (w - HomeDrawerModel.COLS * stride) / 2);
+            if (w > 0) gridLeft = Math.max(dp(24), (w - layoutColumns * stride) / 2);
             scrollY = clampScrollY(scrollY);
             fillVisible();
         }
 
         @Override protected void onSizeChanged(int w, int h, int ow, int oh) {
             super.onSizeChanged(w, h, ow, oh);
-            if (w > 0) gridLeft = Math.max(dp(24), (w - HomeDrawerModel.COLS * stride) / 2);
+            if (w > 0) gridLeft = Math.max(dp(24), (w - layoutColumns * stride) / 2);
             recomputeContentHeight();
             repositionAttached(); fillVisible();
         }
@@ -5060,13 +5084,13 @@ public class LauncherActivity extends Activity {
 
         private int cellLeft(int index) {
             int hc = hc();
-            int row = HomeDrawerModel.rowOf(index, hc);
-            int col = HomeDrawerModel.colOf(index, hc);
-            int len = HomeDrawerModel.rowLength(row, displayed.size(), hc);
+            int row = HomeDrawerModel.rowOf(layoutColumns, index, hc);
+            int col = HomeDrawerModel.colOf(layoutColumns, index, hc);
+            int len = HomeDrawerModel.rowLength(layoutColumns, row, displayed.size(), hc);
             return rowLeftPad(row, len) + col * stride + sidePad;
         }
         private int cellTop(int index) {
-            int row = HomeDrawerModel.rowOf(index, hc());
+            int row = HomeDrawerModel.rowOf(layoutColumns, index, hc());
             return firstRowTop() + row * rowStride - scrollY;
         }
 
@@ -5078,14 +5102,14 @@ public class LauncherActivity extends Activity {
             if (h == 0 || displayed.isEmpty()) return;
             int hc = hc();
             int size = displayed.size();
-            int rows = HomeDrawerModel.rowCount(size, hc);
+            int rows = HomeDrawerModel.rowCount(layoutColumns, size, hc);
             int base = firstRowTop();
             int firstRow = Math.max(0, (scrollY - base) / rowStride - BUFFER_ROWS);
             int lastRow  = Math.min(rows - 1, (scrollY + h - base) / rowStride + BUFFER_ROWS);
             // Detach cells whose row scrolled out (or whose index is now stale).
             for (int i = attached.size() - 1; i >= 0; i--) {
                 int idx = attached.keyAt(i);
-                int row = HomeDrawerModel.rowOf(idx, hc);
+                int row = HomeDrawerModel.rowOf(layoutColumns, idx, hc);
                 if (idx >= size || row < firstRow || row > lastRow) {
                     DrawerCell cv = attached.valueAt(i);
                     if (cv.boundApp != null) {
@@ -5098,9 +5122,9 @@ public class LauncherActivity extends Activity {
             }
             // Attach the cells that are now in range.
             for (int row = firstRow; row <= lastRow; row++) {
-                int len = HomeDrawerModel.rowLength(row, size, hc);
+                int len = HomeDrawerModel.rowLength(layoutColumns, row, size, hc);
                 for (int col = 0; col < len; col++) {
-                    int idx = HomeDrawerModel.indexAt(row, col, size, hc);
+                    int idx = HomeDrawerModel.indexAt(layoutColumns, row, col, size, hc);
                     if (idx < 0) continue;
                     if (attached.get(idx) != null) continue;
                     DrawerCell cv = obtainCell(); bindCell(cv, idx); attached.put(idx, cv);
@@ -5224,7 +5248,7 @@ public class LauncherActivity extends Activity {
         private void ensureVisible(int index, boolean snap) {
             int viewH = getHeight();
             if (viewH <= 0) return;   // not laid out yet — open()'s retry handles it
-            int row = HomeDrawerModel.rowOf(index, hc());
+            int row = HomeDrawerModel.rowOf(layoutColumns, index, hc());
             int top    = firstRowTop() + row * rowStride;   // content-space (no scroll)
             int bottom = top + cellH;
             // Keep one whole row of context beyond the focused row, so focus
@@ -5447,7 +5471,7 @@ public class LauncherActivity extends Activity {
          *  translation from a prior animation is cleared so nothing sticks. */
         private void applyMove(HomeDrawerModel.MoveResult r) {
             int size = displayed.size();
-            int newHc = HomeDrawerModel.clampHomeCount(r.homeCount, size);
+            int newHc = HomeDrawerModel.clampHomeCount(layoutColumns, r.homeCount, size);
             if (size >= 1 && newHc < 1) newHc = 1;   // keep at least one home app
             LauncherActivity.this.homeCount = newHc;
             LauncherActivity.this.rebuildAppListFromVisible(displayed);
@@ -5488,10 +5512,10 @@ public class LauncherActivity extends Activity {
             int hc = hc();
             HomeDrawerModel.MoveResult r;
             switch (kc) {
-                case KeyEvent.KEYCODE_DPAD_LEFT:  r = HomeDrawerModel.moveLeft (displayed, dragIndex, hc); break;
-                case KeyEvent.KEYCODE_DPAD_RIGHT: r = HomeDrawerModel.moveRight(displayed, dragIndex, hc); break;
-                case KeyEvent.KEYCODE_DPAD_UP:    r = HomeDrawerModel.moveUp   (displayed, dragIndex, hc); break;
-                case KeyEvent.KEYCODE_DPAD_DOWN:  r = HomeDrawerModel.moveDown (displayed, dragIndex, hc); break;
+                case KeyEvent.KEYCODE_DPAD_LEFT:  r = HomeDrawerModel.moveLeft(layoutColumns, displayed, dragIndex, hc); break;
+                case KeyEvent.KEYCODE_DPAD_RIGHT: r = HomeDrawerModel.moveRight(layoutColumns, displayed, dragIndex, hc); break;
+                case KeyEvent.KEYCODE_DPAD_UP:    r = HomeDrawerModel.moveUp(layoutColumns, displayed, dragIndex, hc); break;
+                case KeyEvent.KEYCODE_DPAD_DOWN:  r = HomeDrawerModel.moveDown(layoutColumns, displayed, dragIndex, hc); break;
                 default: return;
             }
             applyMove(r);
@@ -5733,19 +5757,19 @@ public class LauncherActivity extends Activity {
                     int size = displayed.size(), hc = hc();
                     switch (kc) {
                         case KeyEvent.KEYCODE_DPAD_LEFT:
-                            requestFocusOnIndex(HomeDrawerModel.navLeft(boundIndex, size, hc), held);
+                            requestFocusOnIndex(HomeDrawerModel.navLeft(layoutColumns, boundIndex, size, hc), held);
                             return true;
                         case KeyEvent.KEYCODE_DPAD_RIGHT:
-                            requestFocusOnIndex(HomeDrawerModel.navRight(boundIndex, size, hc), held);
+                            requestFocusOnIndex(HomeDrawerModel.navRight(layoutColumns, boundIndex, size, hc), held);
                             return true;
                         case KeyEvent.KEYCODE_DPAD_DOWN:
-                            requestFocusOnIndex(HomeDrawerModel.navDown(boundIndex, size, hc), held);
+                            requestFocusOnIndex(HomeDrawerModel.navDown(layoutColumns, boundIndex, size, hc), held);
                             return true;
                         case KeyEvent.KEYCODE_DPAD_UP:
-                            int up = HomeDrawerModel.navUp(boundIndex, size, hc);
+                            int up = HomeDrawerModel.navUp(layoutColumns, boundIndex, size, hc);
                             if (up == HomeDrawerModel.CLOSE_DRAWER) {
                                 closeDrawer();
-                            } else if (HomeDrawerModel.shouldCloseOnNavUp(
+                            } else if (HomeDrawerModel.shouldCloseOnNavUp(layoutColumns,
                                     boundIndex, up, size, hc)) {
                                 // Crossing into row 0 returns directly to the
                                 // bottom home bar. Seed the destination before
@@ -6642,7 +6666,10 @@ public class LauncherActivity extends Activity {
         // (possibly the reused visibleScratch) never leaks across UI events.
         List<AppInfo> visible = buildVisibleList();
         if (resolveCount) resolveHomeCount(visible.size());
-        else if (homeCount < 0) homeCount = Math.max(1, prefs.getInt(KEY_HOME_COUNT, 1));
+        else if (homeCount < 0) {
+            int stored = prefs.getInt(KEY_HOME_COUNT, 1);
+            homeCount = Math.max(1, Math.min(layoutColumns, stored));
+        }
         int hc = effectiveHomeCount(visible.size());
         // Clamp BEFORE building the home row so every applyShelfApps()
         // caller gets a safe focusedIndex for free. Without this, a stale
@@ -7133,6 +7160,8 @@ public class LauncherActivity extends Activity {
         final FrameLayout ov = settingsOverlay;
         final android.widget.LinearLayout card = settingsCard;
         if (ov == null) return;
+        final boolean applyLayout = layoutApplyPending;
+        if (applyLayout) layoutApplyPending = false;
         if (card != null) {
             card.animate().cancel();
             card.animate()
@@ -7151,11 +7180,13 @@ public class LauncherActivity extends Activity {
                         // where the keymap card has already taken
                         // over the modal flow).
                         dismissOverlayBackdropIfIdle();
+                        if (applyLayout && !destroyed) recreate();
                     })
                     .start();
         } else {
             ov.setVisibility(View.GONE);
             dismissOverlayBackdropIfIdle();
+            if (applyLayout && !destroyed) recreate();
         }
         // Restore focus to the gear pill so the user lands back where
         // they triggered the panel. Falls through to the WiFi pill if
@@ -7202,7 +7233,13 @@ public class LauncherActivity extends Activity {
                 TextView ind = (TextView) indicatorView;
                 int[] pageRows = settingsPageRows();
                 int rowId = (i < pageRows.length) ? pageRows[i] : -1;
-                if (rowId == SR_CLOCK) {
+                if (rowId == SR_LAYOUT_COLUMNS) {
+                    ind.setText(getString(R.string.settings_value_columns, layoutColumns));
+                    ind.setTextColor(sel ? selTx : 0xFF7DD3FC);
+                } else if (rowId == SR_CARD_CORNER) {
+                    ind.setText(getString(R.string.settings_value_percent, cardCornerPercent));
+                    ind.setTextColor(sel ? selTx : 0xFF7DD3FC);
+                } else if (rowId == SR_CLOCK) {
                     // 3-state clock indicator: Full / Time / Off.
                     ind.setText(clockMode == CLOCK_FULL ? "Full"
                               : clockMode == CLOCK_TIME_ONLY ? "Time" : "Off");
@@ -7254,12 +7291,16 @@ public class LauncherActivity extends Activity {
                 refreshSettingsRows(); return true;
             case KeyEvent.KEYCODE_DPAD_LEFT:
                 int rowId = currentSettingsRowId();
-                if (rowId == SR_SLIDESHOW_DURATION) stepSlideshowDuration(-1);
+                if (rowId == SR_LAYOUT_COLUMNS) stepLayoutColumns(-1);
+                else if (rowId == SR_CARD_CORNER) stepCardCorner(-1);
+                else if (rowId == SR_SLIDESHOW_DURATION) stepSlideshowDuration(-1);
                 else if (rowId == SR_IDLE_HIDE) stepIdleHide(-1);
                 return true;   // swallow on other rows (panel is modal)
             case KeyEvent.KEYCODE_DPAD_RIGHT:
                 rowId = currentSettingsRowId();
-                if (rowId == SR_SLIDESHOW_DURATION) stepSlideshowDuration(+1);
+                if (rowId == SR_LAYOUT_COLUMNS) stepLayoutColumns(+1);
+                else if (rowId == SR_CARD_CORNER) stepCardCorner(+1);
+                else if (rowId == SR_SLIDESHOW_DURATION) stepSlideshowDuration(+1);
                 else if (rowId == SR_IDLE_HIDE) stepIdleHide(+1);
                 return true;
             case KeyEvent.KEYCODE_DPAD_CENTER:
@@ -7269,10 +7310,16 @@ public class LauncherActivity extends Activity {
                 return true;
             case KeyEvent.KEYCODE_BACK:
             case KeyEvent.KEYCODE_ESCAPE:
-                // BACK on a sub-page returns to the main list; on the main
-                // list it closes the panel.
-                if (settingsPage != SPAGE_MAIN) returnToSettingsMain();
-                else                            hideSettingsPanel();
+                // BACK on a changed Layout page applies by closing the panel;
+                // this prevents a deferred recreate from colliding with a
+                // different main-page action such as opening a file picker.
+                if (settingsPage == SPAGE_LAYOUT && layoutApplyPending) {
+                    hideSettingsPanel();
+                } else if (settingsPage != SPAGE_MAIN) {
+                    returnToSettingsMain();
+                } else {
+                    hideSettingsPanel();
+                }
                 return true;
         }
         // Allow volume / power / media to pass through; swallow other
@@ -7329,6 +7376,15 @@ public class LauncherActivity extends Activity {
                 keymapOpenedFromSettings = true;
                 hideSettingsPanel();
                 showKeymapOverlay();
+                break;
+            case SR_LAYOUT_MENU:
+                enterSettingsPage(SPAGE_LAYOUT, SR_LAYOUT_MENU);
+                break;
+            case SR_LAYOUT_COLUMNS:
+                stepLayoutColumns(+1);
+                break;
+            case SR_CARD_CORNER:
+                stepCardCorner(+1);
                 break;
             case SR_WALLPAPER_MENU:
                 enterSettingsPage(SPAGE_WALLPAPER, SR_WALLPAPER_MENU);
@@ -7395,6 +7451,29 @@ public class LauncherActivity extends Activity {
             default:
                 break;
         }
+    }
+
+    private void stepLayoutColumns(int direction) {
+        int next = LayoutOptions.stepColumns(layoutColumns, direction);
+        if (next == layoutColumns) return;
+        layoutColumns = next;
+        prefs.edit().putInt(KEY_LAYOUT_COLUMNS, next).apply();
+        updateLayoutApplyPending();
+        refreshSettingsRows();
+    }
+
+    private void stepCardCorner(int direction) {
+        int next = LayoutOptions.stepCornerPercent(cardCornerPercent, direction);
+        if (next == cardCornerPercent) return;
+        cardCornerPercent = next;
+        prefs.edit().putInt(KEY_CARD_CORNER_PERCENT, next).apply();
+        updateLayoutApplyPending();
+        refreshSettingsRows();
+    }
+
+    private void updateLayoutApplyPending() {
+        layoutApplyPending = layoutColumns != appliedLayoutColumns
+                || cardCornerPercent != appliedCardCornerPercent;
     }
 
     // ── About overlay build / show / hide / navigate / QR ───────────────
@@ -10122,6 +10201,8 @@ public class LauncherActivity extends Activity {
                 prefs.getString(KEY_KEYMAP, ""),
                 prefs.getString(KEY_HIDDEN, ""),
                 clockMode,
+                layoutColumns,
+                cardCornerPercent,
                 prefs.getString(KEY_CUSTOM_NAMES, ""));
         try (java.io.OutputStream os = getContentResolver().openOutputStream(uri, "w")) {
             if (os == null) { showToast(getString(R.string.toast_backup_failed)); return; }
@@ -10179,7 +10260,23 @@ public class LauncherActivity extends Activity {
             ed.putInt(KEY_CLOCK_MODE, cm);
             ed.putBoolean(KEY_SHOW_CLOCK, cm != CLOCK_OFF);   // keep legacy key in sync
         }
+        int restoredColumns = LayoutOptions.sanitizeColumns(p.intVal(
+                SettingsBackup.K_LAYOUT_COLUMNS, layoutColumns));
+        int restoredCorner = LayoutOptions.sanitizeCornerPercent(p.intVal(
+                SettingsBackup.K_CARD_CORNER_PERCENT, cardCornerPercent));
+        boolean applyLayout = (p.has(SettingsBackup.K_LAYOUT_COLUMNS)
+                || p.has(SettingsBackup.K_CARD_CORNER_PERCENT))
+                && (restoredColumns != appliedLayoutColumns
+                || restoredCorner != appliedCardCornerPercent);
+        if (p.has(SettingsBackup.K_LAYOUT_COLUMNS)) {
+            ed.putInt(KEY_LAYOUT_COLUMNS, restoredColumns);
+        }
+        if (p.has(SettingsBackup.K_CARD_CORNER_PERCENT)) {
+            ed.putInt(KEY_CARD_CORNER_PERCENT, restoredCorner);
+        }
         ed.apply();
+        if (p.has(SettingsBackup.K_LAYOUT_COLUMNS)) layoutColumns = restoredColumns;
+        if (p.has(SettingsBackup.K_CARD_CORNER_PERCENT)) cardCornerPercent = restoredCorner;
 
         // Reload in-memory state from the freshly-written prefs.
         loadKeyMap();
@@ -10224,6 +10321,7 @@ public class LauncherActivity extends Activity {
             }
         }
         showToast(getString(R.string.toast_restore_done));
+        if (applyLayout && !destroyed) recreate();
     }
 
     // ── Wallpaper slideshow engine ───────────────────────────────────────
@@ -11132,7 +11230,7 @@ public class LauncherActivity extends Activity {
         // Stash the returned handle as {@link #prefs} so every
         // {@code getString} / {@code edit} site reuses one instance —
         // see the field's javadoc for the cumulative-savings rationale.
-        prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
+        if (prefs == null) prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
         loadCustomNames();
         // {@link Context#getSystemService(String)} is documented to
         // return {@code null} when the named service does not exist.
@@ -11358,21 +11456,30 @@ public class LauncherActivity extends Activity {
 
     private int dp(int v) { return Math.round(v * density); }
 
-    /** Compute six 3:2 tvOS-style app cards for both the favorites shelf and
-     *  the lower grid. The focused card scales without an outline. */
+    private void loadLayoutOptions() {
+        layoutColumns = LayoutOptions.sanitizeColumns(prefs.getInt(
+                KEY_LAYOUT_COLUMNS, LayoutOptions.DEFAULT_COLUMNS));
+        cardCornerPercent = LayoutOptions.sanitizeCornerPercent(prefs.getInt(
+                KEY_CARD_CORNER_PERCENT, LayoutOptions.DEFAULT_CORNER_PERCENT));
+        appliedLayoutColumns = layoutColumns;
+        appliedCardCornerPercent = cardCornerPercent;
+        layoutApplyPending = false;
+    }
+
+    /** Compute 3:2 tvOS-style app cards for both the favorites shelf and the
+     *  lower grid using the persisted density options. */
     private void computeTileDims() {
         int sidePad = dp(12);
         int avail   = Math.max(0, screenW - dp(24) * 2);
-        int stride  = avail > 0 ? avail / At4kHomeLayout.COLUMNS : dp(150);
+        int stride  = avail > 0 ? avail / layoutColumns : dp(150);
         int cw = stride - sidePad * 2;
         int capW = dp(156), minW = dp(64);
         if (cw > capW) cw = capW;
         cw = Math.round(cw * 0.92f);
         if (cw < minW) cw = minW;
-        At4kHomeLayout.Metrics metrics = At4kHomeLayout.calculate(screenW, screenH, density);
         tileWpx      = cw;
         bannerHpx    = Math.round(cw * 2f / 3f);
-        tileCornerPx = Math.max(metrics.tileCornerPx, Math.round(bannerHpx * 0.20f));
+        tileCornerPx = At4kHomeLayout.cornerRadiusPx(bannerHpx, cardCornerPercent);
         cellHpx      = bannerHpx + dp(28);
     }
 

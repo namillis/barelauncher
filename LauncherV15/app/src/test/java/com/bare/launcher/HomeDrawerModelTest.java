@@ -146,6 +146,24 @@ public class HomeDrawerModelTest {
         assertEquals(19, HomeDrawerModel.navDown(19, size, hc));
     }
 
+    @Test public void geometry_runtimeColumnsReflowAndClampFavorites() {
+        assertEquals(4, HomeDrawerModel.clampHomeCount(4, 6, 20));
+        assertEquals(5, HomeDrawerModel.rowCount(4, 20, 6));
+        assertEquals(3, HomeDrawerModel.rowCount(7, 20, 7));
+        assertEquals(1, HomeDrawerModel.rowOf(4, 4, 4));
+        assertEquals(0, HomeDrawerModel.colOf(4, 4, 4));
+        assertEquals(1, HomeDrawerModel.rowOf(7, 7, 7));
+        assertEquals(0, HomeDrawerModel.colOf(7, 7, 7));
+        assertEquals(11, HomeDrawerModel.indexAt(7, 1, 4, 20, 7));
+    }
+
+    @Test public void navigation_runtimeColumnsUseMatchingVerticalSlots() {
+        assertEquals(2, HomeDrawerModel.navUp(4, 6, 20, 4));
+        assertEquals(2, HomeDrawerModel.navUp(7, 9, 20, 7));
+        assertEquals(6, HomeDrawerModel.navDown(4, 2, 20, 4));
+        assertEquals(9, HomeDrawerModel.navDown(7, 2, 20, 7));
+    }
+
     // ── Move mode: promote / demote ──────────────────────────────────────
 
     @Test public void move_promote_appendsToHomeAndIncrements() {
@@ -172,6 +190,24 @@ public class HomeDrawerModelTest {
         assertEquals("p8", order.get(2));        // moved app in the home slot
         assertEquals("p2", order.get(8));        // replaced home app → vacated slot
         assertEquals(Arrays.asList("p0", "p1", "p8", "p3", "p4", "p5"), order.subList(0, 6));
+    }
+
+    @Test public void move_promote_fullRuntimeWidth_swapsWithCellAbove() {
+        List<String> four = list(16);
+        HomeDrawerModel.MoveResult fourResult =
+                HomeDrawerModel.moveUp(4, four, 6, 4);
+        assertEquals(4, fourResult.homeCount);
+        assertEquals(2, fourResult.index);
+        assertEquals("p6", four.get(2));
+        assertEquals("p2", four.get(6));
+
+        List<String> seven = list(21);
+        HomeDrawerModel.MoveResult sevenResult =
+                HomeDrawerModel.moveUp(7, seven, 9, 7);
+        assertEquals(7, sevenResult.homeCount);
+        assertEquals(2, sevenResult.index);
+        assertEquals("p9", seven.get(2));
+        assertEquals("p2", seven.get(9));
     }
 
     @Test public void move_demote_decrementsAndLeavesFirstNonHome() {

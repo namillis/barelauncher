@@ -16,6 +16,23 @@ public class At4kHomeLayoutTest {
     }
 
     @Test
+    public void runtimeColumnsResizeCardsAndPreserveThreeByTwoRatio() {
+        At4kHomeLayout.Metrics four = At4kHomeLayout.calculate(1920, 1080, 1f, 4, 20);
+        At4kHomeLayout.Metrics seven = At4kHomeLayout.calculate(1920, 1080, 1f, 7, 20);
+
+        assertTrue(four.tileWidthPx > seven.tileWidthPx);
+        assertEquals(four.tileWidthPx * 2, four.tileHeightPx * 3, 2);
+        assertEquals(seven.tileWidthPx * 2, seven.tileHeightPx * 3, 2);
+    }
+
+    @Test
+    public void cardCornerRadiusSupportsSquareAndThirtyPercentEndpoints() {
+        assertEquals(0, At4kHomeLayout.cornerRadiusPx(160, 0));
+        assertEquals(32, At4kHomeLayout.cornerRadiusPx(160, 20));
+        assertEquals(48, At4kHomeLayout.cornerRadiusPx(160, 30));
+    }
+
+    @Test
     public void favoritesCardIsVerticallyCenteredInsideBarCell() {
         assertEquals(14, At4kHomeLayout.centeredTop(188, 160));
         assertEquals(0, At4kHomeLayout.centeredTop(160, 160));
