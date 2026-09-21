@@ -481,8 +481,11 @@ android {
         // Bumped 44 → 45: 2.4.9 waits through launch orientation recreation
         // before device tests retain activity-owned views and dialogs.
         // SemVer PATCH — stable API 26 release-test activity ownership.
-        versionCode   = 46
-        versionName   = "2.5.0"
+        // Bumped 46 → 47: 2.5.1 adds an optional named-color focus border
+        // and increases selected app cards to 1.10x scale.
+        // SemVer PATCH — user-visible focus navigation refinement.
+        versionCode   = 47
+        versionName   = "2.5.1"
         resourceConfigurations += listOf("en")
 
         // Instrumentation test runner. Required so :app:connectedDebugAndroidTest

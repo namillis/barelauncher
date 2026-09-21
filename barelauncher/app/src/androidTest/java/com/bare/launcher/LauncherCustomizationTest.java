@@ -148,19 +148,30 @@ public class LauncherCustomizationTest {
     }
 
     @Test
-    public void layoutSettings_exposesColumnsAndRoundnessControls() {
+    public void layoutSettings_exposesColumnsRoundnessAndFocusControls() {
         Context context = getInstrumentation().getTargetContext();
         String prefsName = (String) staticField(LauncherActivity.class, "PREFS");
         String columnsKey = (String) staticField(LauncherActivity.class, "KEY_LAYOUT_COLUMNS");
         String cornerKey = (String) staticField(
                 LauncherActivity.class, "KEY_CARD_CORNER_PERCENT");
+        String borderKey = (String) staticField(
+                LauncherActivity.class, "KEY_FOCUS_BORDER_ENABLED");
+        String colorKey = (String) staticField(
+                LauncherActivity.class, "KEY_FOCUS_BORDER_COLOR");
         SharedPreferences preferences = context.getSharedPreferences(
                 prefsName, Context.MODE_PRIVATE);
         boolean hadColumns = preferences.contains(columnsKey);
         boolean hadCorner = preferences.contains(cornerKey);
+        boolean hadBorder = preferences.contains(borderKey);
+        boolean hadColor = preferences.contains(colorKey);
         int oldColumns = preferences.getInt(columnsKey, LayoutOptions.DEFAULT_COLUMNS);
         int oldCorner = preferences.getInt(cornerKey, LayoutOptions.DEFAULT_CORNER_PERCENT);
-        assertTrue(preferences.edit().putInt(columnsKey, 6).putInt(cornerKey, 20).commit());
+        boolean oldBorder = preferences.getBoolean(
+                borderKey, LayoutOptions.DEFAULT_FOCUS_BORDER_ENABLED);
+        int oldColor = preferences.getInt(colorKey, LayoutOptions.DEFAULT_FOCUS_COLOR);
+        assertTrue(preferences.edit().putInt(columnsKey, 6).putInt(cornerKey, 20)
+                .putBoolean(borderKey, true)
+                .putInt(colorKey, LayoutOptions.DEFAULT_FOCUS_COLOR).commit());
 
         try (ActivityScenario<LauncherActivity> scenario =
                      launchSettledLauncher()) {
@@ -173,18 +184,20 @@ public class LauncherCustomizationTest {
             awaitValue(scenario, "Layout settings rows", activity -> {
                 android.widget.LinearLayout column = (android.widget.LinearLayout)
                         field(activity, "settingsColumn");
-                return column != null && column.getChildCount() == 2 ? column : null;
+                return column != null && column.getChildCount() == 4 ? column : null;
             });
 
             scenario.onActivity(activity -> {
                 invoke(activity, "stepLayoutColumns", new Class<?>[] {int.class}, -1);
                 invoke(activity, "stepCardCorner", new Class<?>[] {int.class}, -1);
+                invoke(activity, "toggleFocusBorder");
+                invoke(activity, "stepFocusColor", new Class<?>[] {int.class}, 1);
             });
             android.widget.LinearLayout column = awaitValue(
                     scenario, "updated Layout settings", activity -> {
                         android.widget.LinearLayout current = (android.widget.LinearLayout)
                                 field(activity, "settingsColumn");
-                        if (current == null || current.getChildCount() != 2) return null;
+                        if (current == null || current.getChildCount() != 4) return null;
                         String columnsText = ((android.widget.TextView)
                                 ((ViewGroup) current.getChildAt(0)).getChildAt(1))
                                 .getText().toString();
@@ -201,6 +214,7 @@ public class LauncherCustomizationTest {
 
             scenario.onActivity(activity -> {
                 assertSame(column, field(activity, "settingsColumn"));
+                assertEquals(4, column.getChildCount());
                 assertEquals(activity.getString(R.string.settings_row_layout_columns),
                         ((android.widget.TextView) ((ViewGroup) column.getChildAt(0))
                                 .getChildAt(0)).getText().toString());
@@ -208,8 +222,14 @@ public class LauncherCustomizationTest {
                         ((ViewGroup) column.getChildAt(0)).getChildAt(1)).getText().toString());
                 assertEquals("< 18% >", ((android.widget.TextView)
                         ((ViewGroup) column.getChildAt(1)).getChildAt(1)).getText().toString());
+                assertEquals("Off", ((android.widget.TextView)
+                        ((ViewGroup) column.getChildAt(2)).getChildAt(1)).getText().toString());
+                assertEquals("< Cyan >", ((android.widget.TextView)
+                        ((ViewGroup) column.getChildAt(3)).getChildAt(1)).getText().toString());
                 assertEquals(5, preferences.getInt(columnsKey, -1));
                 assertEquals(18, preferences.getInt(cornerKey, -1));
+                assertEquals(false, preferences.getBoolean(borderKey, true));
+                assertEquals(0xFF00E5FF, preferences.getInt(colorKey, 0));
                 assertTrue((Boolean) field(activity, "layoutApplyPending"));
             });
         } finally {
@@ -218,6 +238,10 @@ public class LauncherCustomizationTest {
             else restore.remove(columnsKey);
             if (hadCorner) restore.putInt(cornerKey, oldCorner);
             else restore.remove(cornerKey);
+            if (hadBorder) restore.putBoolean(borderKey, oldBorder);
+            else restore.remove(borderKey);
+            if (hadColor) restore.putInt(colorKey, oldColor);
+            else restore.remove(colorKey);
             assertTrue(restore.commit());
         }
     }
@@ -365,7 +389,24 @@ public class LauncherCustomizationTest {
     }
 
     @Test
-    public void focusedHomeAndGridTiles_castShadowAndClearItOnBlur() {
+    public void focusedHomeAndGridTiles_showCustomBorderScaleAndShadow() {
+        Context context = getInstrumentation().getTargetContext();
+        String prefsName = (String) staticField(LauncherActivity.class, "PREFS");
+        String borderKey = (String) staticField(
+                LauncherActivity.class, "KEY_FOCUS_BORDER_ENABLED");
+        String colorKey = (String) staticField(
+                LauncherActivity.class, "KEY_FOCUS_BORDER_COLOR");
+        SharedPreferences preferences = context.getSharedPreferences(
+                prefsName, Context.MODE_PRIVATE);
+        boolean hadBorder = preferences.contains(borderKey);
+        boolean hadColor = preferences.contains(colorKey);
+        boolean oldBorder = preferences.getBoolean(
+                borderKey, LayoutOptions.DEFAULT_FOCUS_BORDER_ENABLED);
+        int oldColor = preferences.getInt(colorKey, LayoutOptions.DEFAULT_FOCUS_COLOR);
+        int customColor = 0xFF00E5FF;
+        assertTrue(preferences.edit().putBoolean(borderKey, true)
+                .putInt(colorKey, customColor).commit());
+
         try (ActivityScenario<LauncherActivity> scenario =
                      launchSettledLauncher()) {
             View homeCell = focusHomeCell(scenario);
@@ -374,19 +415,53 @@ public class LauncherCustomizationTest {
                             "FOCUS_SHADOW_Z_DP"))
                             * activity.getResources().getDisplayMetrics().density * 10f) / 10f);
 
-            awaitValue(scenario, "home tile focus shadow", activity ->
-                    Math.abs(homeCell.getTranslationZ() - expectedShadow) < 0.6f
-                            ? homeCell : null);
+            awaitValue(scenario, "home tile focus visuals", activity -> {
+                View ring = (View) field(activity, "ringView");
+                return ring != null
+                        && ring.getVisibility() == View.VISIBLE
+                        && Math.abs(homeCell.getScaleX() - 1.10f) < 0.01f
+                        && Math.abs(homeCell.getTranslationZ() - expectedShadow) < 0.6f
+                        ? homeCell : null;
+            });
+            scenario.onActivity(activity -> {
+                View ringView = (View) field(activity, "ringView");
+                android.graphics.Paint paint = (android.graphics.Paint)
+                        field(ringView, "ring");
+                assertEquals(customColor, paint.getColor());
+
+                FrameLayout root = (FrameLayout) field(activity, "root");
+                int[] cellLocation = new int[2];
+                int[] rootLocation = new int[2];
+                homeCell.getLocationOnScreen(cellLocation);
+                root.getLocationOnScreen(rootLocation);
+                int cellHeight = (Integer) field(activity, "cellHpx");
+                int bannerHeight = (Integer) field(activity, "bannerHpx");
+                float artworkCenter = At4kHomeLayout.centeredTop(
+                        cellHeight, bannerHeight) + bannerHeight / 2f;
+                float expectedCenterY = cellLocation[1] - rootLocation[1]
+                        + artworkCenter * homeCell.getScaleY();
+                float actualCenterY = ringView.getY() + ringView.getHeight() / 2f;
+                assertEquals("favorites border follows artwork center",
+                        expectedCenterY, actualCenterY, 1f);
+            });
 
             scenario.onActivity(activity -> invoke(activity, "openDrawer"));
             View gridCell = awaitFocusedCell(scenario, "DrawerCell");
-            awaitValue(scenario, "grid tile focus shadow", activity ->
-                    Math.abs(gridCell.getTranslationZ() - expectedShadow) < 0.6f
+            awaitValue(scenario, "grid tile focus visuals", activity ->
+                    Math.abs(gridCell.getScaleX() - 1.10f) < 0.01f
+                            && Math.abs(gridCell.getTranslationZ() - expectedShadow) < 0.6f
                             ? gridCell : null);
 
             scenario.onActivity(activity -> gridCell.setFocusable(false));
             awaitValue(scenario, "shadow removed from blurred grid tile", activity ->
                     Math.abs(gridCell.getTranslationZ()) < 0.1f ? gridCell : null);
+        } finally {
+            SharedPreferences.Editor restore = preferences.edit();
+            if (hadBorder) restore.putBoolean(borderKey, oldBorder);
+            else restore.remove(borderKey);
+            if (hadColor) restore.putInt(colorKey, oldColor);
+            else restore.remove(colorKey);
+            assertTrue(restore.commit());
         }
     }
 

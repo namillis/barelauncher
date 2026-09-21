@@ -7,6 +7,21 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+## [2.5.1] — 2026-09-21
+
+### Added
+
+- **Focus borders are optional and customizable.** Layout settings includes a
+  default-off Focus border toggle and a named high-contrast Focus color selector,
+  so users can add an unmistakable remote cursor without decoding hex values.
+- **Focus borders align with every app card.** The outline follows the actual
+  artwork center in both the favorites bar and lower app grid.
+
+### Changed
+
+- **Selected app cards expand to 1.10x.** The stronger scale cue combines with
+  the existing drop shadow and optional border on both favorites and the grid.
+
 ## [2.4.9] — 2026-09-21
 
 ### Fixed
