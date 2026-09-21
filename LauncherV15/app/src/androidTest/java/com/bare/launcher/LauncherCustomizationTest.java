@@ -11,6 +11,7 @@ import static org.junit.Assert.fail;
 import android.app.AlertDialog;
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.content.res.Configuration;
 import android.os.SystemClock;
 import android.view.KeyEvent;
 import android.view.View;
@@ -19,6 +20,7 @@ import android.view.WindowManager;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputConnection;
 import android.widget.EditText;
+import android.widget.FrameLayout;
 
 import androidx.test.core.app.ActivityScenario;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
@@ -55,7 +57,7 @@ public class LauncherCustomizationTest {
     @Test
     public void contextMenu_forApp_exposesRename() {
         try (ActivityScenario<LauncherActivity> scenario =
-                     ActivityScenario.launch(LauncherActivity.class)) {
+                     launchSettledLauncher()) {
             View homeCell = focusHomeCell(scenario);
             scenario.onActivity(activity -> assertTrue(homeCell.performLongClick()));
 
@@ -67,7 +69,7 @@ public class LauncherCustomizationTest {
     @Test
     public void renameDialog_hasFocusedInputAndWorkingSaveResetButtons() {
         try (ActivityScenario<LauncherActivity> scenario =
-                     ActivityScenario.launch(LauncherActivity.class)) {
+                     launchSettledLauncher()) {
             View homeCell = focusHomeCell(scenario);
             AppInfo originalApp = (AppInfo) field(homeCell, "boundApp");
             String identity = originalApp.packageName;
@@ -96,7 +98,7 @@ public class LauncherCustomizationTest {
     @Test
     public void renameDialog_imeDoneHidesKeyboardAndFocusesSave() {
         try (ActivityScenario<LauncherActivity> scenario =
-                     ActivityScenario.launch(LauncherActivity.class)) {
+                     launchSettledLauncher()) {
             AlertDialog dialog = openRenameDialog(scenario, focusHomeCell(scenario), false);
             scenario.onActivity(activity -> {
                 EditText input = (EditText) field(activity, "renameInput");
@@ -128,7 +130,7 @@ public class LauncherCustomizationTest {
     @Test
     public void renameDialog_inputHasBalancedHorizontalSpacing() {
         try (ActivityScenario<LauncherActivity> scenario =
-                     ActivityScenario.launch(LauncherActivity.class)) {
+                     launchSettledLauncher()) {
             AlertDialog dialog = openRenameDialog(
                     scenario, focusHomeCell(scenario), false);
             scenario.onActivity(activity -> {
@@ -172,7 +174,7 @@ public class LauncherCustomizationTest {
                 .putInt(colorKey, LayoutOptions.DEFAULT_FOCUS_COLOR).commit());
 
         try (ActivityScenario<LauncherActivity> scenario =
-                     ActivityScenario.launch(LauncherActivity.class)) {
+                     launchSettledLauncher()) {
             scenario.onActivity(activity -> invoke(activity, "showSettingsPanel"));
             awaitVisibleViewField(scenario, "settingsOverlay");
 
@@ -267,7 +269,7 @@ public class LauncherCustomizationTest {
                 .putInt(homeCountKey, 6).putString(hiddenKey, "").commit());
 
         try (ActivityScenario<LauncherActivity> scenario =
-                     ActivityScenario.launch(LauncherActivity.class)) {
+                     launchSettledLauncher()) {
             awaitValue(scenario, "loaded four-column layout", activity -> {
                 Object shelf = field(activity, "shelf");
                 @SuppressWarnings("unchecked")
@@ -308,9 +310,34 @@ public class LauncherCustomizationTest {
     }
 
     @Test
+    public void drawerOpen_continuesWhenLegacyBlurFrameNeverArrives() {
+        try (ActivityScenario<LauncherActivity> scenario =
+                     launchSettledLauncher()) {
+            focusHomeCell(scenario);
+            scenario.onActivity(activity -> {
+                FrameLayout originalRoot = (FrameLayout) field(activity, "root");
+                FrameLayout stalledFrameSource = new FrameLayout(activity) {
+                    @Override
+                    public void postOnAnimation(Runnable action) {
+                        // Simulate a legacy compositor that never supplies the requested frame.
+                    }
+                };
+                setField(activity, "root", stalledFrameSource);
+                try {
+                    invoke(activity, "openDrawer");
+                } finally {
+                    setField(activity, "root", originalRoot);
+                }
+            });
+
+            awaitVisibleViewField(scenario, "drawer");
+        }
+    }
+
+    @Test
     public void dpadUp_fromFirstGridRow_returnsDirectlyToMatchingHomeFavorite() {
         try (ActivityScenario<LauncherActivity> scenario =
-                     ActivityScenario.launch(LauncherActivity.class)) {
+                     launchSettledLauncher()) {
             View originalHomeCell = focusHomeCell(scenario);
             AppInfo expectedFavorite = (AppInfo) field(originalHomeCell, "boundApp");
 
@@ -340,7 +367,7 @@ public class LauncherCustomizationTest {
     @Test
     public void refreshArtwork_whileDrawerVisible_keepsFocusInDrawer() {
         try (ActivityScenario<LauncherActivity> scenario =
-                     ActivityScenario.launch(LauncherActivity.class)) {
+                     launchSettledLauncher()) {
             focusHomeCell(scenario);
             scenario.onActivity(activity -> invoke(activity, "openDrawer"));
             View drawer = awaitVisibleViewField(scenario, "drawer");
@@ -380,7 +407,7 @@ public class LauncherCustomizationTest {
                 .putInt(colorKey, customColor).commit());
 
         try (ActivityScenario<LauncherActivity> scenario =
-                     ActivityScenario.launch(LauncherActivity.class)) {
+                     launchSettledLauncher()) {
             View homeCell = focusHomeCell(scenario);
             float expectedShadow = awaitValue(scenario, "configured focus shadow", activity ->
                     Math.round(((Integer) staticField(LauncherActivity.class,
@@ -421,6 +448,26 @@ public class LauncherCustomizationTest {
         }
     }
 
+    private static ActivityScenario<LauncherActivity> launchSettledLauncher() {
+        ActivityScenario<LauncherActivity> scenario =
+                ActivityScenario.launch(LauncherActivity.class);
+        try {
+            awaitValue(scenario, "laid-out landscape LauncherActivity", activity -> {
+                View root = activity.findViewById(android.R.id.content);
+                return activity.getResources().getConfiguration().orientation
+                        == Configuration.ORIENTATION_LANDSCAPE
+                        && root != null
+                        && root.getWidth() > root.getHeight()
+                        && !activity.isChangingConfigurations()
+                        ? activity : null;
+            });
+            return scenario;
+        } catch (RuntimeException | Error error) {
+            scenario.close();
+            throw error;
+        }
+    }
+
     private static AlertDialog openRenameDialog(
             ActivityScenario<LauncherActivity> scenario, View cell, boolean expectReset) {
         AppInfo app = (AppInfo) field(cell, "boundApp");
@@ -436,20 +483,27 @@ public class LauncherCustomizationTest {
 
     private static AlertDialog awaitRenameDialogReady(
             ActivityScenario<LauncherActivity> scenario, boolean expectReset) {
-        return awaitValue(scenario, "visible Rename dialog with ready actions", activity -> {
-            AlertDialog dialog = (AlertDialog) field(activity, "renameDialog");
+        AlertDialog dialog = awaitValue(scenario, "visible Rename dialog with actions", activity -> {
+            AlertDialog current = (AlertDialog) field(activity, "renameDialog");
             EditText input = (EditText) field(activity, "renameInput");
-            if (dialog == null || !dialog.isShowing() || input == null) {
+            if (current == null || !current.isShowing() || input == null) {
                 return null;
             }
-            if (dialog.getButton(AlertDialog.BUTTON_POSITIVE) == null
-                    || !dialog.getButton(AlertDialog.BUTTON_POSITIVE).isFocusable()
-                    || dialog.getButton(AlertDialog.BUTTON_NEGATIVE) == null
+            if (current.getButton(AlertDialog.BUTTON_POSITIVE) == null
+                    || current.getButton(AlertDialog.BUTTON_NEGATIVE) == null
+                    || (expectReset
+                    && current.getButton(AlertDialog.BUTTON_NEUTRAL) == null)) {
+                return null;
+            }
+            return current;
+        });
+        return awaitValue(scenario, "focusable Rename actions", activity -> {
+            if (!dialog.getButton(AlertDialog.BUTTON_POSITIVE).isFocusable()
                     || !dialog.getButton(AlertDialog.BUTTON_NEGATIVE).isFocusable()) {
                 return null;
             }
-            if (expectReset && (dialog.getButton(AlertDialog.BUTTON_NEUTRAL) == null
-                    || !dialog.getButton(AlertDialog.BUTTON_NEUTRAL).isFocusable())) {
+            if (expectReset
+                    && !dialog.getButton(AlertDialog.BUTTON_NEUTRAL).isFocusable()) {
                 return null;
             }
             return dialog;
@@ -480,10 +534,18 @@ public class LauncherCustomizationTest {
     }
 
     private static View focusHomeCell(ActivityScenario<LauncherActivity> scenario) {
-        View shelf = awaitVisibleViewField(scenario, "shelf");
-        scenario.onActivity(activity -> invoke(shelf, "requestFocusOnIndex",
-                new Class<?>[] {int.class, boolean.class}, 0, true));
-        return awaitFocusedCell(scenario, "CellView");
+        return awaitValue(scenario, "focused home CellView", activity -> {
+            View shelf = (View) field(activity, "shelf");
+            if (shelf == null || shelf.getVisibility() != View.VISIBLE || !shelf.isShown()) {
+                return null;
+            }
+            invoke(shelf, "requestFocusOnIndex",
+                    new Class<?>[] {int.class, boolean.class}, 0, true);
+            View focused = activity.getWindow().getDecorView().findFocus();
+            return focused != null
+                    && focused.getClass().getSimpleName().equals("CellView")
+                    ? focused : null;
+        });
     }
 
     private static View awaitFocusedApp(ActivityScenario<LauncherActivity> scenario,
@@ -561,6 +623,16 @@ public class LauncherCustomizationTest {
             Field field = target.getClass().getDeclaredField(name);
             field.setAccessible(true);
             return field.get(target);
+        } catch (ReflectiveOperationException e) {
+            throw new AssertionError(e);
+        }
+    }
+
+    private static void setField(Object target, String name, Object value) {
+        try {
+            Field field = target.getClass().getDeclaredField(name);
+            field.setAccessible(true);
+            field.set(target, value);
         } catch (ReflectiveOperationException e) {
             throw new AssertionError(e);
         }

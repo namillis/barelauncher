@@ -469,10 +469,22 @@ android {
         // Bumped 40 → 41: 2.4.5 restores launcher focus only after Rename
         // dismisses and isolates dialog tests from context-menu animation.
         // SemVer PATCH — dialog focus continuity and test isolation.
-        // Bumped 41 → 42: 2.5.0 restores an optional custom-color focus
+        // Bumped 41 → 42: 2.4.6 makes every Rename action explicitly
+        // D-pad-focusable instead of relying on ROM touch-mode defaults.
+        // SemVer PATCH — consistent dialog navigation across TV versions.
+        // Bumped 42 → 43: 2.4.7 synchronizes cold-start device-test setup
+        // with observable shelf focus and content-layout postconditions.
+        // SemVer PATCH — deterministic release validation on cold emulators.
+        // Bumped 43 → 44: 2.4.8 bounds legacy PixelCopy preparation so an
+        // unavailable compositor frame cannot block drawer navigation.
+        // SemVer PATCH — reliable drawer opening on API 26-30 devices.
+        // Bumped 44 → 45: 2.4.9 waits through launch orientation recreation
+        // before device tests retain activity-owned views and dialogs.
+        // SemVer PATCH — stable API 26 release-test activity ownership.
+        // Bumped 45 → 46: 2.5.0 restores an optional custom-color focus
         // border and increases selected app cards to 1.10x scale.
         // SemVer MINOR — additive user-facing focus controls.
-        versionCode   = 42
+        versionCode   = 46
         versionName   = "2.5.0"
         resourceConfigurations += listOf("en")
 

@@ -20,6 +20,41 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 - **Selected app cards expand to 1.10x.** The stronger scale cue combines with
   the existing drop shadow and optional border on both favorites and the grid.
 
+## [2.4.9] — 2026-09-21
+
+### Fixed
+
+- **API 26 device tests wait for the launcher's final landscape activity.**
+  ActivityScenario setup now follows the portrait-to-landscape recreation before
+  keeping view or dialog references, so release checks cannot act on an activity
+  Android has already replaced.
+
+## [2.4.8] — 2026-09-21
+
+### Fixed
+
+- **The app drawer still opens when an older TV compositor stalls blur capture.**
+  Legacy PixelCopy preparation now has a bounded fallback that continues without
+  blur and discards any late callback, so optional wallpaper polish cannot block
+  D-pad navigation.
+
+## [2.4.7] — 2026-09-21
+
+### Fixed
+
+- **Cold-emulator release checks wait for the launcher to be ready.** Device-test
+  setup now establishes home-cell focus only after the shelf can accept it, and
+  smoke tests wait for non-zero content dimensions instead of treating an idle
+  looper as proof that the first layout finished.
+
+## [2.4.6] — 2026-09-21
+
+### Fixed
+
+- **Save, Cancel, and Reset are always reachable with a TV remote.** Rename now
+  marks each action explicitly focusable in touch mode when the dialog opens,
+  avoiding API 26 and ROM-specific AlertDialog defaults.
+
 ## [2.4.5] — 2026-09-21
 
 ### Fixed
