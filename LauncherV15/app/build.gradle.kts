@@ -448,8 +448,12 @@ android {
         // Bumped 33 → 34: 2.3.3 dismisses the on-screen keyboard when the
         // rename field submits Done/Enter and adds balanced field spacing.
         // SemVer PATCH — fixes rename-dialog presentation only.
-        versionCode   = 34
-        versionName   = "2.3.3"
+        // Bumped 34 → 35: 2.3.4 keeps the dark favorites bar visible in the
+        // blurred app grid and removes the separator line between favorites
+        // and the remaining apps.
+        // SemVer PATCH — focused UI continuity refinement.
+        versionCode   = 35
+        versionName   = "2.3.4"
         resourceConfigurations += listOf("en")
 
         // Instrumentation test runner. Required so :app:connectedDebugAndroidTest

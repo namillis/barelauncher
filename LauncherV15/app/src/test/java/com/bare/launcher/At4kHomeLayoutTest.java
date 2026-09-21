@@ -22,6 +22,12 @@ public class At4kHomeLayoutTest {
     }
 
     @Test
+    public void gridFavoritesPlateTracksFirstRow() {
+        assertEquals(170, At4kHomeLayout.favoritesPlateTop(200, 30));
+        assertEquals(358, At4kHomeLayout.favoritesPlateBottom(200, 30, 188));
+    }
+
+    @Test
     public void labelsAppearOnlyBelowFavoritesBoundary() {
         assertFalse(At4kHomeLayout.shouldShowLabel(0, 6));
         assertFalse(At4kHomeLayout.shouldShowLabel(5, 6));
