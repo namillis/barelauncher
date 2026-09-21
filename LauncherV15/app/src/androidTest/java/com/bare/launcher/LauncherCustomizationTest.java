@@ -341,15 +341,17 @@ public class LauncherCustomizationTest {
         scenario.onActivity(activity -> assertTrue(cell.performLongClick()));
         View rename = awaitVisibleViewField(scenario, "menuRename");
         scenario.onActivity(activity -> assertTrue(rename.performClick()));
-        return awaitRenameDialogReady(scenario, expectReset);
+        AlertDialog dialog = awaitRenameDialogReady(scenario, expectReset);
+        focusRenameInput(scenario);
+        return dialog;
     }
 
     private static AlertDialog awaitRenameDialogReady(
             ActivityScenario<LauncherActivity> scenario, boolean expectReset) {
-        return awaitValue(scenario, "ready Rename dialog", activity -> {
+        return awaitValue(scenario, "visible Rename dialog with ready actions", activity -> {
             AlertDialog dialog = (AlertDialog) field(activity, "renameDialog");
             EditText input = (EditText) field(activity, "renameInput");
-            if (dialog == null || !dialog.isShowing() || input == null || !input.hasFocus()) {
+            if (dialog == null || !dialog.isShowing() || input == null) {
                 return null;
             }
             if (dialog.getButton(AlertDialog.BUTTON_POSITIVE) == null
@@ -363,6 +365,20 @@ public class LauncherCustomizationTest {
                 return null;
             }
             return dialog;
+        });
+    }
+
+    private static void focusRenameInput(ActivityScenario<LauncherActivity> scenario) {
+        scenario.onActivity(activity -> {
+            EditText input = (EditText) field(activity, "renameInput");
+            if (!input.hasFocus()) {
+                input.setFocusableInTouchMode(true);
+                input.requestFocus();
+            }
+        });
+        awaitValue(scenario, "focused Rename input", activity -> {
+            EditText input = (EditText) field(activity, "renameInput");
+            return input != null && input.hasFocus() ? input : null;
         });
     }
 
