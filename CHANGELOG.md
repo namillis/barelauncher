@@ -7,6 +7,15 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+## [2.4.8] — 2026-09-21
+
+### Fixed
+
+- **The app drawer still opens when an older TV compositor stalls blur capture.**
+  Legacy PixelCopy preparation now has a bounded fallback that continues without
+  blur and discards any late callback, so optional wallpaper polish cannot block
+  D-pad navigation.
+
 ## [2.4.7] — 2026-09-21
 
 ### Fixed

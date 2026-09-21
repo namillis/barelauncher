@@ -195,6 +195,10 @@ public class LauncherActivity extends Activity {
     // in over this same window (see closeDrawer / beginHomeFadeIn) so the
     // drawer sliding down and the home appearing blend into one motion.
     private static final int    DRAWER_ANIM_MS = 200;
+    // PixelCopy is optional polish. If a legacy compositor never reaches the
+    // requested frame or callback, open the drawer without blur rather than
+    // leaving the home shelf hidden and navigation blocked indefinitely.
+    private static final int    LEGACY_BLUR_CAPTURE_TIMEOUT_MS = 250;
 
     // Easing curves. Defined once, reused everywhere — no per-animation alloc.
     //   FOCUS_EASE      — decelerate-out, the canonical "press / lift" curve
@@ -297,6 +301,7 @@ public class LauncherActivity extends Activity {
     private Bitmap              legacyGridBlurBitmap;
     private boolean             legacyGridBlurDirty = true;
     private boolean             legacyGridBlurCapturePending = false;
+    private int                 legacyGridBlurCaptureGeneration = 0;
     private RingView           ringView;
     private FrameLayout        root;
     private Toast              currentToast;
@@ -1488,7 +1493,9 @@ public class LauncherActivity extends Activity {
 
     /** Capture wallpaper-only content after home chrome has been hidden, blur
      *  a tiny preview, then reveal the legacy grid. PixelCopy keeps hardware
-     *  wallpaper bitmaps readable without a full-resolution CPU copy. */
+     *  wallpaper bitmaps readable without a full-resolution CPU copy. The
+     *  capture is optional: a bounded watchdog continues without blur when a
+     *  legacy compositor never delivers its frame or callback. */
     private void prepareLegacyDrawerBlur(Runnable after) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             applyDrawerBlur(true);
@@ -1509,13 +1516,31 @@ public class LauncherActivity extends Activity {
             return;
         }
         legacyGridBlurCapturePending = true;
+        final int captureGeneration = ++legacyGridBlurCaptureGeneration;
+        final boolean[] continued = {false};
+        final Runnable continueOnce = () -> {
+            if (continued[0] || destroyed) return;
+            continued[0] = true;
+            after.run();
+        };
+        uiHandler.postDelayed(() -> {
+            if (destroyed
+                    || captureGeneration != legacyGridBlurCaptureGeneration
+                    || !legacyGridBlurCapturePending) {
+                return;
+            }
+            legacyGridBlurCapturePending = false;
+            legacyGridBlurCaptureGeneration++;
+            continueOnce.run();
+        }, LEGACY_BLUR_CAPTURE_TIMEOUT_MS);
         layer.setVisibility(View.GONE);
         // postOnAnimation runs before traversal. Nesting once allows the first
         // traversal to commit the hidden shelf/chrome, then PixelCopy samples
         // that wallpaper-only frame on the following animation boundary.
         content.postOnAnimation(() -> content.postOnAnimation(() -> {
-            if (destroyed) {
-                legacyGridBlurCapturePending = false;
+            if (destroyed
+                    || captureGeneration != legacyGridBlurCaptureGeneration
+                    || !legacyGridBlurCapturePending) {
                 return;
             }
             int previewW = Math.max(120, screenW / 12);
@@ -1526,12 +1551,16 @@ public class LauncherActivity extends Activity {
                         Bitmap.Config.ARGB_8888);
             } catch (OutOfMemoryError error) {
                 legacyGridBlurCapturePending = false;
-                after.run();
+                continueOnce.run();
                 return;
             }
             try {
                 PixelCopy.request(getWindow(), new Rect(0, 0, screenW, screenH),
                         preview, result -> {
+                            if (captureGeneration != legacyGridBlurCaptureGeneration) {
+                                preview.recycle();
+                                return;
+                            }
                             legacyGridBlurCapturePending = false;
                             if (destroyed) {
                                 preview.recycle();
@@ -1549,12 +1578,12 @@ public class LauncherActivity extends Activity {
                             } else {
                                 preview.recycle();
                             }
-                            after.run();
+                            continueOnce.run();
                         }, uiHandler);
             } catch (RuntimeException error) {
                 legacyGridBlurCapturePending = false;
                 preview.recycle();
-                after.run();
+                continueOnce.run();
             }
         }));
     }
