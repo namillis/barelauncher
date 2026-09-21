@@ -10043,13 +10043,11 @@ public class LauncherActivity extends Activity {
                 .setTitle(getString(R.string.rename_title, app.label))
                 .setView(inputContainer)
                 .setPositiveButton(R.string.rename_save, (dialog, which) ->
-                        applyCustomNameOverride(app, input.getText().toString(),
-                                fromDrawer, focusHint))
-                .setNegativeButton(android.R.string.cancel, (dialog, which) ->
-                        restoreCustomizationFocus(fromDrawer, app.packageName, focusHint));
+                        applyCustomNameOverride(app, input.getText().toString()))
+                .setNegativeButton(android.R.string.cancel, (dialog, which) -> { });
         if (customNames.containsKey(app.packageName)) {
             builder.setNeutralButton(R.string.rename_reset, (dialog, which) ->
-                    applyCustomNameOverride(app, null, fromDrawer, focusHint));
+                    applyCustomNameOverride(app, null));
         }
         AlertDialog dialog = builder.create();
         renameDialog = dialog;
@@ -10063,12 +10061,13 @@ public class LauncherActivity extends Activity {
             hideRenameKeyboard(dialog, input);
             return true;
         });
-        dialog.setOnCancelListener(ignored ->
-                restoreCustomizationFocus(fromDrawer, app.packageName, focusHint));
         dialog.setOnDismissListener(ignored -> {
             if (renameDialog == dialog) {
                 renameDialog = null;
                 renameInput = null;
+            }
+            if (!destroyed) {
+                restoreCustomizationFocus(fromDrawer, app.packageName, focusHint);
             }
         });
         dialog.setOnShowListener(ignored -> {
@@ -10102,8 +10101,7 @@ public class LauncherActivity extends Activity {
         }
     }
 
-    private void applyCustomNameOverride(AppInfo app, String requestedName,
-                                         boolean fromDrawer, int focusHint) {
+    private void applyCustomNameOverride(AppInfo app, String requestedName) {
         if (app == null) return;
         String name = CustomNameStore.sanitize(requestedName);
         if (name != null && name.equals(app.sourceLabel)) name = null;
@@ -10134,7 +10132,6 @@ public class LauncherActivity extends Activity {
         showToast(getString(name == null
                 ? R.string.toast_name_reset : R.string.toast_name_set,
                 app.label));
-        restoreCustomizationFocus(fromDrawer, app.packageName, focusHint);
     }
 
     private void restoreCustomizationFocus(boolean fromDrawer, String identity, int fallback) {
