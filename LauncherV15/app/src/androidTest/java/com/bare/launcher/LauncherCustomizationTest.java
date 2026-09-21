@@ -378,20 +378,27 @@ public class LauncherCustomizationTest {
 
     private static AlertDialog awaitRenameDialogReady(
             ActivityScenario<LauncherActivity> scenario, boolean expectReset) {
-        return awaitValue(scenario, "visible Rename dialog with ready actions", activity -> {
-            AlertDialog dialog = (AlertDialog) field(activity, "renameDialog");
+        AlertDialog dialog = awaitValue(scenario, "visible Rename dialog with actions", activity -> {
+            AlertDialog current = (AlertDialog) field(activity, "renameDialog");
             EditText input = (EditText) field(activity, "renameInput");
-            if (dialog == null || !dialog.isShowing() || input == null) {
+            if (current == null || !current.isShowing() || input == null) {
                 return null;
             }
-            if (dialog.getButton(AlertDialog.BUTTON_POSITIVE) == null
-                    || !dialog.getButton(AlertDialog.BUTTON_POSITIVE).isFocusable()
-                    || dialog.getButton(AlertDialog.BUTTON_NEGATIVE) == null
+            if (current.getButton(AlertDialog.BUTTON_POSITIVE) == null
+                    || current.getButton(AlertDialog.BUTTON_NEGATIVE) == null
+                    || (expectReset
+                    && current.getButton(AlertDialog.BUTTON_NEUTRAL) == null)) {
+                return null;
+            }
+            return current;
+        });
+        return awaitValue(scenario, "focusable Rename actions", activity -> {
+            if (!dialog.getButton(AlertDialog.BUTTON_POSITIVE).isFocusable()
                     || !dialog.getButton(AlertDialog.BUTTON_NEGATIVE).isFocusable()) {
                 return null;
             }
-            if (expectReset && (dialog.getButton(AlertDialog.BUTTON_NEUTRAL) == null
-                    || !dialog.getButton(AlertDialog.BUTTON_NEUTRAL).isFocusable())) {
+            if (expectReset
+                    && !dialog.getButton(AlertDialog.BUTTON_NEUTRAL).isFocusable()) {
                 return null;
             }
             return dialog;
