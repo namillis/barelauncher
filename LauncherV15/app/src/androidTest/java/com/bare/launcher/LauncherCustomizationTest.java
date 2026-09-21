@@ -198,7 +198,7 @@ public class LauncherCustomizationTest {
     }
 
     @Test
-    public void fourColumnLayout_demotesOverflowFavoritesAndUsesSquareCards() {
+    public void fourColumnLayout_demotesOverflowFavoritesAndUsesFiveByThreeCards() {
         Context context = getInstrumentation().getTargetContext();
         String prefsName = (String) staticField(LauncherActivity.class, "PREFS");
         String columnsKey = (String) staticField(LauncherActivity.class, "KEY_LAYOUT_COLUMNS");
@@ -239,7 +239,11 @@ public class LauncherCustomizationTest {
                 assertEquals("overflow favorites demoted", 4,
                         ((Integer) field(activity, "homeCount")).intValue());
                 assertEquals("shelf renders four favorites", 4, displayed.size());
-                assertEquals("zero percent gives square cards", 0,
+                int tileWidth = (Integer) field(activity, "tileWpx");
+                int tileHeight = (Integer) field(activity, "bannerHpx");
+                assertEquals("cards use 5:3 geometry", tileWidth * 3,
+                        tileHeight * 5, 2);
+                assertEquals("zero percent gives square corners", 0,
                         ((Integer) field(activity, "tileCornerPx")).intValue());
             });
         } finally {
