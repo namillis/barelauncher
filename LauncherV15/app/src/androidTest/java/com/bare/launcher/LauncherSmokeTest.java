@@ -5,7 +5,9 @@ import static androidx.test.platform.app.InstrumentationRegistry.getInstrumentat
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
+import android.os.SystemClock;
 import android.view.View;
 
 import androidx.test.core.app.ActivityScenario;
@@ -14,6 +16,8 @@ import androidx.test.filters.LargeTest;
 
 import org.junit.Test;
 import org.junit.runner.RunWith;
+
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Smoke test that boots {@link LauncherActivity} on an Android device or
@@ -44,21 +48,24 @@ import org.junit.runner.RunWith;
  *         first measure pass can take longer than 500 ms, producing a
  *         flake; on a fast device the same 500 ms is wasted.</li>
  * </ul>
- * {@code ActivityScenario} is the modern recommended primitive and
- * {@code Instrumentation.waitForIdleSync} blocks until the main looper's
- * message queue is actually idle — both deterministic and faster. The
- * test now compiles against {@code androidx.test.core} only, so the
- * {@code androidx.test:rules} dependency is no longer needed.
+ * {@code ActivityScenario} is the modern recommended primitive. The test drains
+ * the main looper, then checks the observable root dimensions until the first
+ * layout completes. This avoids treating an idle queue as proof that rendering
+ * has finished on a cold emulator. The test compiles against
+ * {@code androidx.test.core} only, so the {@code androidx.test:rules} dependency
+ * is no longer needed.
  */
 @RunWith(AndroidJUnit4.class)
 @LargeTest
 public class LauncherSmokeTest {
 
+    private static final long WAIT_TIMEOUT_MS = 8_000L;
+
     @Test
     public void defaultHome_showsBottomFavoritesAndHidesGrid() {
         try (ActivityScenario<LauncherActivity> scenario =
                      ActivityScenario.launch(LauncherActivity.class)) {
-            getInstrumentation().waitForIdleSync();
+            awaitLaidOutContentView(scenario);
 
             scenario.onActivity(a -> {
                 View root = a.findViewById(android.R.id.content);
@@ -78,26 +85,29 @@ public class LauncherSmokeTest {
     public void boots_andHasContentView() {
         try (ActivityScenario<LauncherActivity> scenario =
                      ActivityScenario.launch(LauncherActivity.class)) {
-            // Block until the main looper has drained — by the time this
-            // returns, onResume has run and the first layout pass has
-            // either completed or been queued. A second drain after
-            // requesting a layout is not needed because onActivityAction
-            // already pumps to RESUMED before returning the scenario.
-            getInstrumentation().waitForIdleSync();
-
-            scenario.onActivity(a -> {
-                assertNotNull("LauncherActivity should be created", a);
-                View root = a.findViewById(android.R.id.content);
-                assertNotNull("content view present", root);
-                // First measure / layout passes have run by now. If the
-                // root still reports zero width / height, something
-                // structural has broken — exactly the regression this
-                // smoke test exists to catch.
-                assertTrue("content view laid out (width > 0)",
-                        root.getWidth() > 0);
-                assertTrue("content view laid out (height > 0)",
-                        root.getHeight() > 0);
-            });
+            awaitLaidOutContentView(scenario);
         }
+    }
+
+    /** Wait for the first real layout; an idle looper can still precede rendering on a cold AVD. */
+    private static View awaitLaidOutContentView(
+            ActivityScenario<LauncherActivity> scenario) {
+        long deadline = SystemClock.uptimeMillis() + WAIT_TIMEOUT_MS;
+        do {
+            getInstrumentation().waitForIdleSync();
+            AtomicReference<View> result = new AtomicReference<>();
+            scenario.onActivity(activity -> {
+                assertNotNull("LauncherActivity should be created", activity);
+                View root = activity.findViewById(android.R.id.content);
+                assertNotNull("content view present", root);
+                if (root.getWidth() > 0 && root.getHeight() > 0) {
+                    result.set(root);
+                }
+            });
+            if (result.get() != null) return result.get();
+            SystemClock.sleep(50);
+        } while (SystemClock.uptimeMillis() < deadline);
+        fail("Timed out waiting for laid-out content view");
+        return null;
     }
 }
