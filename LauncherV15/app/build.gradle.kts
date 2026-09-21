@@ -449,8 +449,8 @@ android {
         // rename field submits Done/Enter and adds balanced field spacing.
         // SemVer PATCH — fixes rename-dialog presentation only.
         // Bumped 34 → 35: 2.3.4 keeps the dark favorites bar visible in the
-        // blurred app grid and removes the separator line between favorites
-        // and the remaining apps.
+        // blurred app grid, removes the separator line between favorites and
+        // the remaining apps, and returns home as soon as UP reaches favorites.
         // SemVer PATCH — focused UI continuity refinement.
         versionCode   = 35
         versionName   = "2.3.4"
