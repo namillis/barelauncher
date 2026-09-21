@@ -478,8 +478,11 @@ android {
         // Bumped 43 → 44: 2.4.8 bounds legacy PixelCopy preparation so an
         // unavailable compositor frame cannot block drawer navigation.
         // SemVer PATCH — reliable drawer opening on API 26-30 devices.
-        versionCode   = 44
-        versionName   = "2.4.8"
+        // Bumped 44 → 45: 2.4.9 waits through launch orientation recreation
+        // before device tests retain activity-owned views and dialogs.
+        // SemVer PATCH — stable API 26 release-test activity ownership.
+        versionCode   = 45
+        versionName   = "2.4.9"
         resourceConfigurations += listOf("en")
 
         // Instrumentation test runner. Required so :app:connectedDebugAndroidTest

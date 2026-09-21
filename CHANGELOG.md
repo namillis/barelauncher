@@ -7,6 +7,15 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+## [2.4.9] — 2026-09-21
+
+### Fixed
+
+- **API 26 device tests wait for the launcher's final landscape activity.**
+  ActivityScenario setup now follows the portrait-to-landscape recreation before
+  keeping view or dialog references, so release checks cannot act on an activity
+  Android has already replaced.
+
 ## [2.4.8] — 2026-09-21
 
 ### Fixed
