@@ -49,6 +49,16 @@ final class At4kHomeLayout {
         return Math.max(0, (containerHeightPx - contentHeightPx) / 2);
     }
 
+    static int favoritesPlateTop(int firstRowTopPx, int scrollYPx) {
+        return firstRowTopPx - scrollYPx;
+    }
+
+    static int favoritesPlateBottom(int firstRowTopPx, int scrollYPx,
+                                    int cellHeightPx) {
+        return favoritesPlateTop(firstRowTopPx, scrollYPx)
+                + Math.max(0, cellHeightPx);
+    }
+
     private static int dp(int value, float density) {
         return Math.round(value * density);
     }

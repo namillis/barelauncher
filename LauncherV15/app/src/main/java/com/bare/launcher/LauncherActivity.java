@@ -4779,7 +4779,9 @@ public class LauncherActivity extends Activity {
         private int gridLeft = 0;   // left edge of the centred grid block (rows 1+)
         private int scrollY  = 0;
         private int contentH = 0;
-        private final Paint dividerPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final RectF favoritesPlateBounds = new RectF();
+        private final Paint favoritesPlateFill = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Paint favoritesPlateStroke = new Paint(Paint.ANTI_ALIAS_FLAG);
 
         int     focusedIndex = 0;
         boolean reorderMode  = false;
@@ -4831,12 +4833,12 @@ public class LauncherActivity extends Activity {
             setClickable(true);
             setClipChildren(false);
             setLayoutDirection(View.LAYOUT_DIRECTION_LOCALE);
-            // We paint a thin divider between the home row and the grid in
-            // onDraw, so opt out of the ViewGroup WILL_NOT_DRAW shortcut.
             setWillNotDraw(false);
-            dividerPaint.setStyle(Paint.Style.STROKE);
-            dividerPaint.setColor(0x40FFFFFF);     // a touch more opaque so the hairline is actually visible
-            dividerPaint.setStrokeWidth(Math.max(1f, density * 1.5f));
+            favoritesPlateFill.setStyle(Paint.Style.FILL);
+            favoritesPlateFill.setColor(0xA6141920);
+            favoritesPlateStroke.setStyle(Paint.Style.STROKE);
+            favoritesPlateStroke.setColor(0x33FFFFFF);
+            favoritesPlateStroke.setStrokeWidth(Math.max(1f, density));
         }
 
         /** Clamped, effective home-row size for the current visible count. */
@@ -5027,32 +5029,22 @@ public class LauncherActivity extends Activity {
 
         @Override protected void onDraw(Canvas canvas) {
             super.onDraw(canvas);
-            // Divider moved to dispatchDraw (drawn AFTER the cells) so a cell
-            // sliding through the row gap during a fast scroll can no longer
-            // paint over the thin line.
-        }
-
-        @Override protected void dispatchDraw(Canvas canvas) {
-            super.dispatchDraw(canvas);
-            // Thin modern divider between the home row (row 0) and the rest of
-            // the drawer grid. Only when there is a home row AND at least one
-            // app below it. Drawn in the row gap, on TOP of the cells, so fast
-            // scrolling never lets an icon override it. Scrolls with content.
-            int hc = hc();
-            if (hc <= 0 || displayed.size() <= hc) return;
-            int base = firstRowTop();
-            // Centre the line in the visible gap between the home-row banner
-            // and the first drawer-row banner. Cells reserve label space below
-            // the banner, so the geometric row gap centre sits much closer to
-            // the lower row; centring between the two BANNERS (row0 banner
-            // bottom = base+bannerHpx, row1 banner top = base+cellH+rowGap)
-            // reads as properly centred between the apps.
-            float y = base + (bannerHpx + cellH + rowGap) / 2f - scrollY;
-            int h = getHeight();
-            if (y < 0 || y > h) return;
-            int left  = gridLeft + sidePad;
-            int right = gridLeft + HomeDrawerModel.COLS * stride - sidePad;
-            canvas.drawLine(left, y, right, y, dividerPaint);
+            int favorites = hc();
+            if (favorites <= 0) return;
+            float top = At4kHomeLayout.favoritesPlateTop(firstRowTop(), scrollY);
+            float bottom = At4kHomeLayout.favoritesPlateBottom(
+                    firstRowTop(), scrollY, cellH);
+            if (bottom < 0f || top > getHeight()) return;
+            float margin = dp(32);
+            float radius = Math.round(bannerHpx * 0.22f);
+            favoritesPlateBounds.set(margin, top, getWidth() - margin, bottom);
+            canvas.drawRoundRect(favoritesPlateBounds, radius, radius,
+                    favoritesPlateFill);
+            float inset = favoritesPlateStroke.getStrokeWidth() / 2f;
+            favoritesPlateBounds.inset(inset, inset);
+            canvas.drawRoundRect(favoritesPlateBounds, radius, radius,
+                    favoritesPlateStroke);
+            favoritesPlateBounds.inset(-inset, -inset);
         }
 
         private int rowLeftPad(int row, int len) {
@@ -5769,7 +5761,8 @@ public class LauncherActivity extends Activity {
                 int w = getWidth(), h = getHeight();
                 if (w <= 0 || h <= 0) return;
                 float cx  = w / 2f;
-                float icy = icyOffset;
+                boolean favorite = boundIndex >= 0 && boundIndex < hc();
+                float icy = favorite ? cellH / 2f : icyOffset;
                 boolean isDragTarget = reorderMode && boundIndex == dragIndex;
                 if (reorderMode && !isDragTarget) {
                     iconPaint.setAlpha(102);
