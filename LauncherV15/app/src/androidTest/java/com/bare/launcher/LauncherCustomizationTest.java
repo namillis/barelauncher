@@ -162,20 +162,43 @@ public class LauncherCustomizationTest {
 
         try (ActivityScenario<LauncherActivity> scenario =
                      ActivityScenario.launch(LauncherActivity.class)) {
+            scenario.onActivity(activity -> invoke(activity, "showSettingsPanel"));
+            awaitVisibleViewField(scenario, "settingsOverlay");
+
+            scenario.onActivity(activity -> invoke(activity, "activateSettingsRowId",
+                    new Class<?>[] {int.class},
+                    staticField(LauncherActivity.class, "SR_LAYOUT_MENU")));
+            awaitValue(scenario, "Layout settings rows", activity -> {
+                android.widget.LinearLayout column = (android.widget.LinearLayout)
+                        field(activity, "settingsColumn");
+                return column != null && column.getChildCount() == 2 ? column : null;
+            });
+
             scenario.onActivity(activity -> {
-                invoke(activity, "showSettingsPanel");
-                invoke(activity, "activateSettingsRowId",
-                        new Class<?>[] {int.class},
-                        staticField(LauncherActivity.class, "SR_LAYOUT_MENU"));
                 invoke(activity, "stepLayoutColumns", new Class<?>[] {int.class}, -1);
                 invoke(activity, "stepCardCorner", new Class<?>[] {int.class}, -1);
             });
-            getInstrumentation().waitForIdleSync();
+            android.widget.LinearLayout column = awaitValue(
+                    scenario, "updated Layout settings", activity -> {
+                        android.widget.LinearLayout current = (android.widget.LinearLayout)
+                                field(activity, "settingsColumn");
+                        if (current == null || current.getChildCount() != 2) return null;
+                        String columnsText = ((android.widget.TextView)
+                                ((ViewGroup) current.getChildAt(0)).getChildAt(1))
+                                .getText().toString();
+                        String cornerText = ((android.widget.TextView)
+                                ((ViewGroup) current.getChildAt(1)).getChildAt(1))
+                                .getText().toString();
+                        return "< 5 >".equals(columnsText)
+                                && "< 18% >".equals(cornerText)
+                                && preferences.getInt(columnsKey, -1) == 5
+                                && preferences.getInt(cornerKey, -1) == 18
+                                && (Boolean) field(activity, "layoutApplyPending")
+                                ? current : null;
+                    });
 
             scenario.onActivity(activity -> {
-                android.widget.LinearLayout column = (android.widget.LinearLayout)
-                        field(activity, "settingsColumn");
-                assertEquals(2, column.getChildCount());
+                assertSame(column, field(activity, "settingsColumn"));
                 assertEquals(activity.getString(R.string.settings_row_layout_columns),
                         ((android.widget.TextView) ((ViewGroup) column.getChildAt(0))
                                 .getChildAt(0)).getText().toString());
@@ -270,12 +293,16 @@ public class LauncherCustomizationTest {
             scenario.onActivity(activity -> invoke(activity, "openDrawer"));
             View drawer = awaitVisibleViewField(scenario, "drawer");
             View gridCell = awaitFocusedCell(scenario, "DrawerCell");
-            scenario.onActivity(activity -> assertTrue(gridCell.dispatchKeyEvent(
-                    new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DPAD_UP))));
+            scenario.onActivity(activity -> {
+                assertTrue(gridCell.dispatchKeyEvent(
+                        new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DPAD_UP)));
+                gridCell.dispatchKeyEvent(
+                        new KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_DPAD_UP));
+            });
 
-            View returnedHomeCell = awaitFocusedCell(scenario, "CellView");
             awaitValue(scenario, "closed drawer", activity ->
                     drawer.getVisibility() != View.VISIBLE ? drawer : null);
+            View returnedHomeCell = awaitFocusedCell(scenario, "CellView");
             scenario.onActivity(activity -> {
                 AppInfo returnedFavorite = (AppInfo) field(returnedHomeCell, "boundApp");
                 assertNotNull(returnedFavorite);

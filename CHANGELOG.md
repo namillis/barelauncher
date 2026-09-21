@@ -7,6 +7,17 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+## [2.4.4] — 2026-09-21
+
+### Fixed
+
+- **D-pad Up reliably returns focus from the app grid to favorites.** BareLauncher
+  restores the matching favorite immediately and reasserts it after the drawer
+  fade, preventing the still-visible drawer from reclaiming focus on slower TVs.
+- **Release device tests synchronize with real UI state.** Layout-settings checks
+  wait for the panel, page, and persisted values, while navigation tests send the
+  complete app-scoped key-event pair before checking final state.
+
 ## [2.4.3] — 2026-09-20
 
 ### Fixed
