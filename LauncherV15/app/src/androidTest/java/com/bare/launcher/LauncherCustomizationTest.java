@@ -429,10 +429,18 @@ public class LauncherCustomizationTest {
     }
 
     private static View focusHomeCell(ActivityScenario<LauncherActivity> scenario) {
-        View shelf = awaitVisibleViewField(scenario, "shelf");
-        scenario.onActivity(activity -> invoke(shelf, "requestFocusOnIndex",
-                new Class<?>[] {int.class, boolean.class}, 0, true));
-        return awaitFocusedCell(scenario, "CellView");
+        return awaitValue(scenario, "focused home CellView", activity -> {
+            View shelf = (View) field(activity, "shelf");
+            if (shelf == null || shelf.getVisibility() != View.VISIBLE || !shelf.isShown()) {
+                return null;
+            }
+            invoke(shelf, "requestFocusOnIndex",
+                    new Class<?>[] {int.class, boolean.class}, 0, true);
+            View focused = activity.getWindow().getDecorView().findFocus();
+            return focused != null
+                    && focused.getClass().getSimpleName().equals("CellView")
+                    ? focused : null;
+        });
     }
 
     private static View awaitFocusedApp(ActivityScenario<LauncherActivity> scenario,

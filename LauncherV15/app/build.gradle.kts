@@ -472,8 +472,11 @@ android {
         // Bumped 41 → 42: 2.4.6 makes every Rename action explicitly
         // D-pad-focusable instead of relying on ROM touch-mode defaults.
         // SemVer PATCH — consistent dialog navigation across TV versions.
-        versionCode   = 42
-        versionName   = "2.4.6"
+        // Bumped 42 → 43: 2.4.7 synchronizes cold-start device-test setup
+        // with observable shelf focus and content-layout postconditions.
+        // SemVer PATCH — deterministic release validation on cold emulators.
+        versionCode   = 43
+        versionName   = "2.4.7"
         resourceConfigurations += listOf("en")
 
         // Instrumentation test runner. Required so :app:connectedDebugAndroidTest

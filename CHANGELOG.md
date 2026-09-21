@@ -7,6 +7,15 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+## [2.4.7] — 2026-09-21
+
+### Fixed
+
+- **Cold-emulator release checks wait for the launcher to be ready.** Device-test
+  setup now establishes home-cell focus only after the shelf can accept it, and
+  smoke tests wait for non-zero content dimensions instead of treating an idle
+  looper as proof that the first layout finished.
+
 ## [2.4.6] — 2026-09-21
 
 ### Fixed
