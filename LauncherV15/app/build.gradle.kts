@@ -466,8 +466,11 @@ android {
         // Bumped 39 → 40: 2.4.4 reasserts home focus after drawer close
         // and synchronizes the corresponding settings/navigation device tests.
         // SemVer PATCH — focus continuity and release-validation reliability.
-        versionCode   = 40
-        versionName   = "2.4.4"
+        // Bumped 40 → 41: 2.4.5 restores launcher focus only after Rename
+        // dismisses and isolates dialog tests from context-menu animation.
+        // SemVer PATCH — dialog focus continuity and test isolation.
+        versionCode   = 41
+        versionName   = "2.4.5"
         resourceConfigurations += listOf("en")
 
         // Instrumentation test runner. Required so :app:connectedDebugAndroidTest

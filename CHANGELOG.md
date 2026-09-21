@@ -7,6 +7,16 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+## [2.4.5] — 2026-09-21
+
+### Fixed
+
+- **Rename Save, Reset, Cancel, and Back restore launcher focus after the dialog
+  closes.** Waiting for `OnDismiss` prevents the dialog window from reclaiming
+  focus after the shelf or app grid has already received it.
+- **Rename-dialog device tests no longer depend on context-menu animation.** The
+  menu action keeps separate coverage while dialog behavior is tested directly.
+
 ## [2.4.4] — 2026-09-21
 
 ### Fixed

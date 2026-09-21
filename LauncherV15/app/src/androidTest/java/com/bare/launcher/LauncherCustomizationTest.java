@@ -365,9 +365,12 @@ public class LauncherCustomizationTest {
 
     private static AlertDialog openRenameDialog(
             ActivityScenario<LauncherActivity> scenario, View cell, boolean expectReset) {
-        scenario.onActivity(activity -> assertTrue(cell.performLongClick()));
-        View rename = awaitVisibleViewField(scenario, "menuRename");
-        scenario.onActivity(activity -> assertTrue(rename.performClick()));
+        AppInfo app = (AppInfo) field(cell, "boundApp");
+        int focusHint = (Integer) field(cell, "boundIndex");
+        assertNotNull(app);
+        scenario.onActivity(activity -> invoke(activity, "showRenameDialog",
+                new Class<?>[] {AppInfo.class, boolean.class, int.class},
+                app, false, focusHint));
         AlertDialog dialog = awaitRenameDialogReady(scenario, expectReset);
         focusRenameInput(scenario);
         return dialog;
