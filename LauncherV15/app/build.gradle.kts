@@ -469,8 +469,11 @@ android {
         // Bumped 40 → 41: 2.4.5 restores launcher focus only after Rename
         // dismisses and isolates dialog tests from context-menu animation.
         // SemVer PATCH — dialog focus continuity and test isolation.
-        versionCode   = 41
-        versionName   = "2.4.5"
+        // Bumped 41 → 42: 2.5.0 restores an optional custom-color focus
+        // border and increases selected app cards to 1.10x scale.
+        // SemVer MINOR — additive user-facing focus controls.
+        versionCode   = 42
+        versionName   = "2.5.0"
         resourceConfigurations += listOf("en")
 
         // Instrumentation test runner. Required so :app:connectedDebugAndroidTest

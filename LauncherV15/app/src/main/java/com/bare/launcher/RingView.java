@@ -2,7 +2,6 @@ package com.bare.launcher;
 
 import android.content.Context;
 import android.graphics.Canvas;
-import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.RectF;
 import android.view.View;
@@ -31,7 +30,8 @@ final class RingView extends View {
     private final float tileW, tileH, tileCorner;
     private float halfW, halfH, cornerR;
 
-    RingView(Context ctx, int strokePx, int tileWpx, int tileHpx, int cornerPx) {
+    RingView(Context ctx, int strokePx, int tileWpx, int tileHpx, int cornerPx,
+             int color) {
         super(ctx);
         // No hardware layer (see git history) — a single stroked rounded rect
         // draws into the display list as fast as into an FBO.
@@ -40,7 +40,7 @@ final class RingView extends View {
         this.tileCorner = cornerPx;
 
         ring.setStyle(Paint.Style.STROKE);
-        ring.setColor(Color.WHITE);
+        ring.setColor(color);
         ring.setStrokeWidth(strokePx);
     }
 

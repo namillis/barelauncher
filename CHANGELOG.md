@@ -7,6 +7,19 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+## [2.5.0] — 2026-09-21
+
+### Added
+
+- **Focus borders are back and customizable.** Layout settings now includes a
+  default-on Focus border toggle and a high-contrast Focus color selector, so
+  the remote cursor remains easy to track across the room.
+
+### Changed
+
+- **Selected app cards expand to 1.10x.** The stronger scale cue combines with
+  the existing drop shadow and optional border on both favorites and the grid.
+
 ## [2.4.5] — 2026-09-21
 
 ### Fixed

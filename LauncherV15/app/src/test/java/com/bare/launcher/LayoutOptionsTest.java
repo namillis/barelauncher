@@ -29,4 +29,17 @@ public class LayoutOptionsTest {
         assertEquals(0, LayoutOptions.stepCornerPercent(0, -1));
         assertEquals(30, LayoutOptions.stepCornerPercent(30, 1));
     }
+
+    @Test public void focusBorderDefaultsOnWithWhiteHighContrastColor() {
+        assertEquals(true, LayoutOptions.DEFAULT_FOCUS_BORDER_ENABLED);
+        assertEquals(0xFFFFFFFF, LayoutOptions.DEFAULT_FOCUS_COLOR);
+    }
+
+    @Test public void focusColorIsOpaqueAndCyclesInBothDirections() {
+        assertEquals(0xFF123456, LayoutOptions.sanitizeFocusColor(0x00123456));
+        assertEquals(0xFF00E5FF,
+                LayoutOptions.stepFocusColor(LayoutOptions.DEFAULT_FOCUS_COLOR, 1));
+        assertEquals(0xFFE040FB,
+                LayoutOptions.stepFocusColor(LayoutOptions.DEFAULT_FOCUS_COLOR, -1));
+    }
 }
