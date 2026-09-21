@@ -35,9 +35,13 @@ final class At4kHomeLayout {
         int gridHorizontalMarginPx = Math.max(dp(24, density), Math.round(screenWidthPx * GRID_HORIZONTAL_MARGIN_FRACTION));
         int columnGapPx = Math.max(dp(12, density), Math.round(screenWidthPx * COLUMN_GAP_FRACTION));
         int tileWidthPx = Math.max(dp(64, density), ((screenWidthPx - (gridHorizontalMarginPx * 2)) - (columnGapPx * (columns - 1))) / columns);
-        int tileHeightPx = Math.round((tileWidthPx * 2.0f) / 3.0f);
+        int tileHeightPx = tileHeightPx(tileWidthPx);
         int labelAreaPx = Math.max(dp(28, density), Math.round(screenHeightPx * LABEL_AREA_FRACTION));
         return new Metrics(gridHorizontalMarginPx, columnGapPx, tileWidthPx, tileHeightPx, cornerRadiusPx(tileHeightPx, cornerPercent), tileHeightPx + labelAreaPx, Math.max(dp(72, density), Math.round(screenHeightPx * GRID_TOP_FRACTION)), Math.max(dp(24, density), Math.round(screenHeightPx * ROW_GAP_FRACTION)), Math.max(dp(24, density), Math.round(screenWidthPx * FAVORITES_PLATE_MARGIN_FRACTION)), Math.max(dp(12, density), Math.round(screenHeightPx * FAVORITES_PLATE_PADDING_FRACTION)), Math.max(dp(48, density), Math.round(screenHeightPx * BOTTOM_PADDING_FRACTION)));
+    }
+
+    static int tileHeightPx(int tileWidthPx) {
+        return Math.round(Math.max(0, tileWidthPx) * 3.0f / 5.0f);
     }
 
     static int cornerRadiusPx(int tileHeightPx, int cornerPercent) {

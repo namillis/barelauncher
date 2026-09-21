@@ -452,10 +452,16 @@ android {
         // blurred app grid, removes the separator line between favorites and
         // the remaining apps, and returns home as soon as UP reaches favorites.
         // SemVer PATCH — focused UI continuity refinement.
+        // Bumped 35 → 36: 2.4.0 adds Layout settings for 4–7 icons per row
+        // and 0–30% app-card corner radius.
+        // SemVer MINOR — additive user-facing layout customization.
         // Bumped 36 → 37: 2.4.1 adds a focused drop shadow to app tiles.
         // SemVer PATCH — focused visual treatment only.
-        versionCode   = 37
-        versionName   = "2.4.1"
+        // Bumped 37 → 38: 2.4.2 corrects app cards to tvOS's 5:3 geometry.
+        // SemVer PATCH — presentation correction only; stored artwork and
+        // layout preferences remain compatible.
+        versionCode   = 38
+        versionName   = "2.4.2"
         resourceConfigurations += listOf("en")
 
         // Instrumentation test runner. Required so :app:connectedDebugAndroidTest

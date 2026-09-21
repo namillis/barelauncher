@@ -7,6 +7,15 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+## [2.4.2] — 2026-09-20
+
+### Fixed
+
+- **App cards now use the correct tvOS 5:3 proportions.** Favorites and the
+  lower app grid render at the same 400:240 shape used by Apple TV artwork,
+  across every 4–7 column layout. Existing custom artwork and layout settings
+  continue to work without migration.
+
 ## [2.4.1] — 2026-09-20
 
 ### Added

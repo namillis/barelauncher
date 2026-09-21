@@ -82,12 +82,12 @@ public class LauncherActivity extends Activity {
 
     private static final int    ICON_DP        = 80;   // round chip/list icon cache size
     private static final int    RING_STROKE_DP = 3;
-    // TV-style 3:2 banner tiles, sized dynamically from the screen width and
+    // TV-style 5:3 banner tiles, sized dynamically from the screen width and
     // selected 4–7 column count (see computeTileDims()).
     // Volatile: written on the UI thread (onCreate / config change), read on
     // the icon executor inside loadBannerBlocking.
     private volatile int        tileWpx      = 0;   // banner / cell width
-    private volatile int        bannerHpx    = 0;   // banner height (3:2)
+    private volatile int        bannerHpx    = 0;   // banner height (5:3)
     private volatile int        tileCornerPx = 0;   // corner radius
     private volatile int        cellHpx      = 0;   // cell height (banner + focused label)
     /** Hide-apps vertical list: per-row height and how many rows are visible
@@ -4344,7 +4344,7 @@ public class LauncherActivity extends Activity {
                 labelMaxWInset = dp(6);
                 icyOffset      = At4kHomeLayout.centeredTop(cellH, bannerH) + bannerH / 2f;
                 focusShadowZ   = dp(FOCUS_SHADOW_Z_DP);
-                // Favorites do not draw labels, so center the 3:2 card within
+                // Favorites do not draw labels, so center the 5:3 card within
                 // the whole bar cell instead of reserving label space below it.
 
                 phRing = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -11509,7 +11509,7 @@ public class LauncherActivity extends Activity {
         layoutApplyPending = false;
     }
 
-    /** Compute 3:2 tvOS-style app cards for both the favorites shelf and the
+    /** Compute 5:3 tvOS-style app cards for both the favorites shelf and the
      *  lower grid using the persisted density options. */
     private void computeTileDims() {
         int sidePad = dp(12);
@@ -11521,7 +11521,7 @@ public class LauncherActivity extends Activity {
         cw = Math.round(cw * 0.92f);
         if (cw < minW) cw = minW;
         tileWpx      = cw;
-        bannerHpx    = Math.round(cw * 2f / 3f);
+        bannerHpx    = At4kHomeLayout.tileHeightPx(cw);
         tileCornerPx = At4kHomeLayout.cornerRadiusPx(bannerHpx, cardCornerPercent);
         cellHpx      = bannerHpx + dp(28);
     }
