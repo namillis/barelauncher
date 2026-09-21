@@ -174,6 +174,10 @@ public class LauncherActivity extends Activity {
     // visual jitter on slow TV ROMs). Scale is small enough to read as
     // "selected" without dominating the shelf.
     private static final float  FOCUS_SCALE    = 1.07f;
+    // Focused app tiles rise above the wallpaper with a soft platform shadow.
+    // translationZ is animated with the existing scale tween, then reset to
+    // zero on blur and recycler reuse so only the selected tile casts it.
+    private static final int    FOCUS_SHADOW_Z_DP = 12;
     // Toolbar pill (network / mapper / wallpaper) focus pop. Smaller than
     // FOCUS_SCALE because the toolbar plates are themselves smaller — at
     // 1.06× the pop read as too aggressive against a 40 dp box. 1.04 is
@@ -3935,7 +3939,9 @@ public class LauncherActivity extends Activity {
                 fillVisible();
                 CellView cv = attached.get(idx);
                 if (cv != null) {
+                    boolean alreadyFocused = cv.isFocused();
                     cv.requestFocus();
+                    if (alreadyFocused) cv.syncFocusedVisual();
                     forceRingAndLabelSync(cv);
                 } else {
                     // Cell not yet attached — post a retry after layout.
@@ -3947,8 +3953,10 @@ public class LauncherActivity extends Activity {
                         if (cv2 != null) {
                             boolean p = fastNav;
                             fastNav = fastDeferred;
+                            boolean alreadyFocused = cv2.isFocused();
                             try { cv2.requestFocus(); }
                             finally { fastNav = p; }
+                            if (alreadyFocused) cv2.syncFocusedVisual();
                             forceRingAndLabelSync(cv2);
                         }
                     });
@@ -4080,6 +4088,7 @@ public class LauncherActivity extends Activity {
                 cv.setScaleX(1f); cv.setScaleY(1f); // reset scale before reuse
                 cv.setTranslationX(0f);         // reorder slide leftover
                 cv.setTranslationY(0f);         // safety reset (no current Y animation)
+                cv.setTranslationZ(0f);         // focused shadow must not leak across reuse
                 cv.setAlpha(1f);                // reset alpha
                 cv.iconBitmap = null;           // clear stale bitmap — prevents ghost icons
                 cv.boundApp   = null;           // clear stale binding
@@ -4311,6 +4320,7 @@ public class LauncherActivity extends Activity {
             private final float   labelOffsetY;
             private final float   labelMaxWInset;
             private final float   icyOffset;
+            private final float   focusShadowZ;
             private final RectF   phRect       = new RectF();
             private       String  labelStr     = "";
             private       String  labelDisplay = "";
@@ -4333,6 +4343,7 @@ public class LauncherActivity extends Activity {
                 labelOffsetY   = bannerH / 2f + dp(16);  // label below the banner
                 labelMaxWInset = dp(6);
                 icyOffset      = At4kHomeLayout.centeredTop(cellH, bannerH) + bannerH / 2f;
+                focusShadowZ   = dp(FOCUS_SHADOW_Z_DP);
                 // Favorites do not draw labels, so center the 3:2 card within
                 // the whole bar cell instead of reserving label space below it.
 
@@ -4361,6 +4372,13 @@ public class LauncherActivity extends Activity {
                 setDefaultFocusHighlightEnabled(false);
                 setBackground(null);
                 setForeground(null);
+                setOutlineProvider(new ViewOutlineProvider() {
+                    @Override public void getOutline(View view, Outline outline) {
+                        int top = Math.round(icyOffset - bannerH / 2f);
+                        outline.setRoundRect(0, top, bannerW, top + bannerH, bannerCorner);
+                    }
+                });
+                setClipToOutline(false);
                 setStateListAnimator(null);
                 setSoundEffectsEnabled(true);
 
@@ -4397,6 +4415,7 @@ public class LauncherActivity extends Activity {
                             // scroll feel that matches the synced shelf scroll.
                             setScaleX(f ? FOCUS_SCALE : 1f);
                             setScaleY(f ? FOCUS_SCALE : 1f);
+                            setTranslationZ(f ? focusShadowZ : 0f);
                             if (f && isAttachedToWindow() && getWidth() > 0)
                                 positionRing(CellView.this);
                         } else if (f) {
@@ -4408,6 +4427,7 @@ public class LauncherActivity extends Activity {
                             // in lockstep with the cell every frame — and being
                             // pre-allocated, avoids per-focus lambda churn.
                             animate().scaleX(FOCUS_SCALE).scaleY(FOCUS_SCALE)
+                                     .translationZ(focusShadowZ)
                                      .setDuration(FOCUS_DUR_MS)
                                      .setInterpolator(FOCUS_IN_BOUNCE)
                                      .setUpdateListener(focusUpdateListener)
@@ -4419,6 +4439,7 @@ public class LauncherActivity extends Activity {
                             // during the unfocus tween (it's a no-op anyway since
                             // !isFocused, but the dispatch cost is real).
                             animate().scaleX(1f).scaleY(1f)
+                                     .translationZ(0f)
                                      .setDuration(UNFOCUS_DUR_MS)
                                      .setInterpolator(FOCUS_EASE)
                                      .setUpdateListener(null)
@@ -4710,6 +4731,15 @@ public class LauncherActivity extends Activity {
             }
 
 
+
+            void syncFocusedVisual() {
+                if (!isFocused()) return;
+                animate().cancel();
+                animate().setUpdateListener(null);
+                setScaleX(FOCUS_SCALE);
+                setScaleY(FOCUS_SCALE);
+                setTranslationZ(focusShadowZ);
+            }
 
             @Override public void setIconBitmap(Bitmap bmp) { iconBitmap = bmp; invalidate(); }
 
@@ -5139,6 +5169,7 @@ public class LauncherActivity extends Activity {
                 cv.animate().setUpdateListener(null).setListener(null);
                 cv.setScaleX(1f); cv.setScaleY(1f);
                 cv.setTranslationX(0f); cv.setTranslationY(0f);
+                cv.setTranslationZ(0f);
                 cv.setAlpha(1f);
                 cv.iconBitmap = null; cv.boundApp = null; cv.boundIndex = -1;
                 cv.setVisibility(VISIBLE); cv.invalidate();
@@ -5585,6 +5616,7 @@ public class LauncherActivity extends Activity {
             private final float     labelOffsetY;
             private final float     labelMaxWInset;
             private final float     icyOffset;
+            private final float     focusShadowZ;
             private final RectF     phRect       = new RectF();
             private       String    labelStr     = "";
             private       String    labelDisplay = "";
@@ -5601,6 +5633,7 @@ public class LauncherActivity extends Activity {
                 labelOffsetY   = bannerH / 2f + dp(16);
                 labelMaxWInset = dp(6);
                 icyOffset      = bannerH / 2f;
+                focusShadowZ   = dp(FOCUS_SHADOW_Z_DP);
 
                 phRing = new Paint(Paint.ANTI_ALIAS_FLAG);
                 phRing.setStyle(Paint.Style.STROKE);
@@ -5623,6 +5656,13 @@ public class LauncherActivity extends Activity {
                 setClickable(true); setWillNotDraw(false);
                 setDefaultFocusHighlightEnabled(false);
                 setBackground(null); setForeground(null);
+                setOutlineProvider(new ViewOutlineProvider() {
+                    @Override public void getOutline(View view, Outline outline) {
+                        int top = Math.round(icyOffset - bannerH / 2f);
+                        outline.setRoundRect(0, top, bannerW, top + bannerH, bannerCorner);
+                    }
+                });
+                setClipToOutline(false);
                 setStateListAnimator(null); setSoundEffectsEnabled(true);
 
                 setOnClickListener(v -> {
@@ -5645,13 +5685,16 @@ public class LauncherActivity extends Activity {
                         if (fastNav) {
                             setScaleX(f ? FOCUS_SCALE : 1f);
                             setScaleY(f ? FOCUS_SCALE : 1f);
+                            setTranslationZ(f ? focusShadowZ : 0f);
                             if (f && isAttachedToWindow() && getWidth() > 0) positionRing(DrawerCell.this);
                         } else if (f) {
                             animate().scaleX(FOCUS_SCALE).scaleY(FOCUS_SCALE)
+                                     .translationZ(focusShadowZ)
                                      .setDuration(FOCUS_DUR_MS).setInterpolator(FOCUS_IN_BOUNCE)
                                      .setUpdateListener(focusUpdateListener).start();
                         } else {
                             animate().scaleX(1f).scaleY(1f)
+                                     .translationZ(0f)
                                      .setDuration(UNFOCUS_DUR_MS).setInterpolator(FOCUS_EASE)
                                      .setUpdateListener(null).start();
                         }

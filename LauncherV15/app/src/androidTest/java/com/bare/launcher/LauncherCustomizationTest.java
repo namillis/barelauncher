@@ -306,6 +306,32 @@ public class LauncherCustomizationTest {
         }
     }
 
+    @Test
+    public void focusedHomeAndGridTiles_castShadowAndClearItOnBlur() {
+        try (ActivityScenario<LauncherActivity> scenario =
+                     ActivityScenario.launch(LauncherActivity.class)) {
+            View homeCell = focusHomeCell(scenario);
+            float expectedShadow = awaitValue(scenario, "configured focus shadow", activity ->
+                    Math.round(((Integer) staticField(LauncherActivity.class,
+                            "FOCUS_SHADOW_Z_DP"))
+                            * activity.getResources().getDisplayMetrics().density * 10f) / 10f);
+
+            awaitValue(scenario, "home tile focus shadow", activity ->
+                    Math.abs(homeCell.getTranslationZ() - expectedShadow) < 0.6f
+                            ? homeCell : null);
+
+            scenario.onActivity(activity -> invoke(activity, "openDrawer"));
+            View gridCell = awaitFocusedCell(scenario, "DrawerCell");
+            awaitValue(scenario, "grid tile focus shadow", activity ->
+                    Math.abs(gridCell.getTranslationZ() - expectedShadow) < 0.6f
+                            ? gridCell : null);
+
+            scenario.onActivity(activity -> gridCell.setFocusable(false));
+            awaitValue(scenario, "shadow removed from blurred grid tile", activity ->
+                    Math.abs(gridCell.getTranslationZ()) < 0.1f ? gridCell : null);
+        }
+    }
+
     private static AlertDialog openRenameDialog(
             ActivityScenario<LauncherActivity> scenario, View cell, boolean expectReset) {
         scenario.onActivity(activity -> assertTrue(cell.performLongClick()));

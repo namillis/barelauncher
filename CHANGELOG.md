@@ -7,6 +7,14 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+## [2.4.1] — 2026-09-20
+
+### Added
+
+- **Focused app tiles now cast a soft drop shadow.** The shadow rises with the
+  existing scale animation on both the favorites bar and app grid, then clears
+  completely when focus moves away.
+
 ## [2.3.3] — 2026-09-20
 
 ### Fixed
