@@ -7,6 +7,15 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+## [2.4.3] — 2026-09-20
+
+### Fixed
+
+- **API 26 release validation no longer races Rename-dialog focus.** The device
+  tests now wait for the dialog and actions first, then explicitly establish
+  the input-focus precondition required by the keyboard tests. App behavior is
+  unchanged.
+
 ## [2.4.2] — 2026-09-20
 
 ### Fixed

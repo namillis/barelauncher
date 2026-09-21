@@ -460,8 +460,11 @@ android {
         // Bumped 37 → 38: 2.4.2 corrects app cards to tvOS's 5:3 geometry.
         // SemVer PATCH — presentation correction only; stored artwork and
         // layout preferences remain compatible.
-        versionCode   = 38
-        versionName   = "2.4.2"
+        // Bumped 38 → 39: 2.4.3 makes API 26 release validation establish
+        // Rename-dialog focus explicitly instead of racing framework focus.
+        // SemVer PATCH — test reliability only; shipped behavior is unchanged.
+        versionCode   = 39
+        versionName   = "2.4.3"
         resourceConfigurations += listOf("en")
 
         // Instrumentation test runner. Required so :app:connectedDebugAndroidTest
