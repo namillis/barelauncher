@@ -194,13 +194,13 @@ public class LauncherActivity extends Activity {
     // menu is open. Applying the property to all attached cards in one UI
     // transaction keeps the dim transition on one frame at every grid density.
     private static final float  REORDER_DIM_ALPHA = 0.4f;
-    // Pull-down drawer open/close transition duration. Open and close share
-    // this single value so the two feel symmetric — the close used to be
-    // shorter (140 ms) and restored the home screen instantly, which read as
-    // an abrupt "snap" on return. On close the home content now cross-fades
-    // in over this same window (see closeDrawer / beginHomeFadeIn) so the
-    // drawer sliding down and the home appearing blend into one motion.
-    private static final int    DRAWER_ANIM_MS = 200;
+    // The drawer now travels between the focused home row and its resting
+    // grid position, rather than fading across a fixed six-percent nudge.
+    // Keep the duration short enough for remote input to feel immediate.
+    private static final int    DRAWER_ANIM_MS = NavigationMotion.SURFACE_DURATION_MS;
+    // Grid cards stay anchored in their layout slots. Only scale and shadow
+    // ease to the focused state; held D-pad repeats still snap immediately.
+    private static final int    GRID_FOCUS_DUR_MS = NavigationMotion.GRID_FOCUS_DURATION_MS;
     // PixelCopy is optional polish. If a legacy compositor never reaches the
     // requested frame or callback, open the drawer without blur rather than
     // leaving the home shelf hidden and navigation blocked indefinitely.
@@ -307,11 +307,15 @@ public class LauncherActivity extends Activity {
     private android.net.ConnectivityManager connMgr = null;
     private android.net.ConnectivityManager.NetworkCallback netCallback = null;
     private FavoritesBlurView   favoritesBlurLayer;
-    private ImageView           legacyGridBlurLayer;
+    /** Temporary full-screen blur overlay. Legacy TVs keep the cached bitmap
+     *  here while the drawer is open; modern TVs use it only during the
+     *  sharp↔blur crossfade, then return to direct RenderEffect rendering. */
+    private ImageView           drawerBlurLayer;
     private Bitmap              legacyGridBlurBitmap;
     private boolean             legacyGridBlurDirty = true;
     private boolean             legacyGridBlurCapturePending = false;
     private int                 legacyGridBlurCaptureGeneration = 0;
+    private int                 drawerBlurTransitionGeneration = 0;
     private RingView           ringView;
     private FrameLayout        root;
     private Toast              currentToast;
@@ -1326,6 +1330,22 @@ public class LauncherActivity extends Activity {
         }
     }
 
+    /** Root-relative center of the artwork in the bottom favorites row. */
+    private float homeRowCenterYInRoot(RecyclingShelfView homeShelf) {
+        FrameLayout r = root;
+        if (homeShelf == null || r == null || !homeShelf.isAttachedToWindow()) {
+            return Float.NaN;
+        }
+        homeShelf.getLocationOnScreen(ringCellLoc);
+        if (!rootLocCached) {
+            r.getLocationOnScreen(ringRootLoc);
+            rootLocCached = true;
+        }
+        float artworkCenter = At4kHomeLayout.centeredTop(cellHpx, bannerHpx)
+                + bannerHpx / 2f;
+        return ringCellLoc[1] - ringRootLoc[1] + artworkCenter;
+    }
+
     /** Open the pull-down app drawer, mirroring the current order / home
      *  boundary and landing focus on the same app the user was on in the home
      *  row. No-op if the drawer is already open or there are no apps. */
@@ -1347,6 +1367,7 @@ public class LauncherActivity extends Activity {
         // stays on the favourite. Clamp the home index defensively.
         int homeIdx = Math.min(Math.max(0, s.focusedIndex), Math.max(0, hc - 1));
         int focus = HomeDrawerModel.navDown(layoutColumns, homeIdx, visible.size(), hc);
+        final float homeRowCenterY = homeRowCenterYInRoot(s);
         // Hide the home shelf while the drawer covers the screen so we never
         // draw both grids at once (the drawer's row 0 already mirrors the home
         // row). INVISIBLE (not GONE) avoids a relayout on open/close.
@@ -1356,7 +1377,9 @@ public class LauncherActivity extends Activity {
         // wallpaper-only frame for the tiny PixelCopy blur preview, avoiding
         // the old dark-only fallback without ever blurring app cards.
         prepareLegacyDrawerBlur(() -> {
-            if (!destroyed && d.getVisibility() != View.VISIBLE) d.open(focus);
+            if (!destroyed && d.getVisibility() != View.VISIBLE) {
+                d.open(focus, homeRowCenterY);
+            }
         });
     }
 
@@ -1389,7 +1412,7 @@ public class LauncherActivity extends Activity {
         // framework race where a still-visible drawer can reclaim that focus.
         RecyclingShelfView s2 = shelf;
         if (s2 == null || destroyed) {
-            d.close(null);
+            d.close(Float.NaN, null);
             return;
         }
         final List<AppInfo> visibleSnapshot = new ArrayList<>(buildVisibleList());
@@ -1398,7 +1421,7 @@ public class LauncherActivity extends Activity {
         setHomeChromeVisible(true);             // restore toolbar + clock
         s2.setVisibility(View.VISIBLE);         // restore the home shelf hidden on open
         if (hc <= 0 || visibleSnapshot.isEmpty()) {
-            d.close(() -> {
+            d.close(Float.NaN, () -> {
                 if (destroyed) return;
                 View nb = netBtn;
                 if (nb != null) nb.requestFocus();
@@ -1413,7 +1436,8 @@ public class LauncherActivity extends Activity {
         // its focus request onto the right cell.
         final int homeIdx = (drawerFocus >= 0 && drawerFocus < hc)
                 ? drawerFocus : Math.max(0, hc - 1);
-        d.close(() -> {
+        final float homeRowCenterY = homeRowCenterYInRoot(s2);
+        d.close(homeRowCenterY, () -> {
             if (!destroyed && shelf == s2) {
                 s2.requestFocusOnIndex(homeIdx, true);
             }
@@ -1485,28 +1509,127 @@ public class LauncherActivity extends Activity {
         View mb = mapperBtnView;      if (mb != null) { mb.animate().cancel(); mb.setAlpha(0.6f); }
     }
 
-    /** Apply the grid wallpaper effect. Android 12+ uses RenderEffect. Older
-     *  TVs show a cached downsampled/box-blurred PixelCopy behind the grid. */
+    /** Duplicate only drawable state; Bitmap pixels remain shared in GPU memory. */
+    private Drawable drawerBlurDrawable() {
+        Drawable source = wallpaperFront != null ? wallpaperFront.getDrawable() : null;
+        Drawable.ConstantState state = source != null ? source.getConstantState() : null;
+        return state != null ? state.newDrawable(getResources()) : null;
+    }
+
+    /** Apply the grid wallpaper effect, crossfading only cached/rendered pixels. */
     private void applyDrawerBlur(boolean on) {
+        applyDrawerBlur(on, true);
+    }
+
+    /**
+     * @param animate false for lifecycle restoration where no transition can
+     *                be observed (pause/resume/force-hide).
+     */
+    private void applyDrawerBlur(boolean on, boolean animate) {
+        ImageView layer = drawerBlurLayer;
+        if (layer == null) return;
+        final int generation = ++drawerBlurTransitionGeneration;
+        layer.animate().cancel();
+        layer.animate().setUpdateListener(null);
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            RenderEffect fx = null;
-            if (on) {
-                float r = dp(24);
-                fx = RenderEffect.createBlurEffect(r, r, Shader.TileMode.CLAMP);
+            if (!animate) {
+                setWallpaperRenderBlur(on);
+                layer.setVisibility(View.GONE);
+                layer.setAlpha(0f);
+                layer.setImageDrawable(null);
+                return;
             }
-            if (wallpaperFront != null) wallpaperFront.setRenderEffect(fx);
-            if (wallpaperBack  != null) wallpaperBack.setRenderEffect(fx);
+
+            if (on) {
+                setWallpaperRenderBlur(false);
+                Drawable source = drawerBlurDrawable();
+                if (source == null) {
+                    setWallpaperRenderBlur(true);
+                    return;
+                }
+                // The drawable (usually one HARDWARE Bitmap) is shared, not
+                // copied. The extra full-screen draw exists for 220 ms only.
+                layer.setImageDrawable(source);
+                layer.setAlpha(0f);
+                layer.setVisibility(View.VISIBLE);
+                layer.animate().alpha(1f)
+                        .setDuration(DRAWER_ANIM_MS).setInterpolator(SCROLL_EASE)
+                        .withEndAction(() -> {
+                            if (generation != drawerBlurTransitionGeneration
+                                    || destroyed) return;
+                            // Return to the original one-layer steady state.
+                            setWallpaperRenderBlur(true);
+                            layer.setVisibility(View.GONE);
+                            layer.setAlpha(0f);
+                            layer.setImageDrawable(null);
+                        }).start();
+            } else {
+                if (layer.getVisibility() != View.VISIBLE) {
+                    Drawable source = drawerBlurDrawable();
+                    if (source == null) {
+                        setWallpaperRenderBlur(false);
+                        return;
+                    }
+                    layer.setImageDrawable(source);
+                    layer.setAlpha(1f);
+                    layer.setVisibility(View.VISIBLE);
+                }
+                // Reveal the already-sharp wallpaper underneath the temporary
+                // blurred copy. No blur radius is recalculated per frame.
+                setWallpaperRenderBlur(false);
+                layer.animate().alpha(0f)
+                        .setDuration(DRAWER_ANIM_MS).setInterpolator(SCROLL_EASE)
+                        .withEndAction(() -> {
+                            if (generation != drawerBlurTransitionGeneration
+                                    || destroyed) return;
+                            layer.setVisibility(View.GONE);
+                            layer.setAlpha(0f);
+                            layer.setImageDrawable(null);
+                        }).start();
+            }
             return;
         }
 
-        ImageView legacy = legacyGridBlurLayer;
-        if (legacy == null) return;
         if (on && legacyGridBlurBitmap != null) {
-            legacy.setImageBitmap(legacyGridBlurBitmap);
-            legacy.setVisibility(View.VISIBLE);
+            layer.setImageBitmap(legacyGridBlurBitmap);
+            layer.setVisibility(View.VISIBLE);
+            if (animate) {
+                layer.setAlpha(0f);
+                layer.animate().alpha(1f)
+                        .setDuration(DRAWER_ANIM_MS).setInterpolator(SCROLL_EASE)
+                        .start();
+            } else {
+                layer.setAlpha(1f);
+            }
         } else if (!on) {
-            legacy.setVisibility(View.GONE);
+            if (!animate || layer.getVisibility() != View.VISIBLE) {
+                layer.setVisibility(View.GONE);
+                layer.setAlpha(0f);
+                layer.setImageDrawable(null);
+                return;
+            }
+            layer.animate().alpha(0f)
+                    .setDuration(DRAWER_ANIM_MS).setInterpolator(SCROLL_EASE)
+                    .withEndAction(() -> {
+                        if (generation != drawerBlurTransitionGeneration
+                                || destroyed) return;
+                        layer.setVisibility(View.GONE);
+                        layer.setImageDrawable(null);
+                    }).start();
         }
+    }
+
+    private void setWallpaperRenderBlur(boolean on) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return;
+        RenderEffect effect = null;
+        if (on) {
+            float radius = dp(24);
+            effect = RenderEffect.createBlurEffect(
+                    radius, radius, Shader.TileMode.CLAMP);
+        }
+        if (wallpaperFront != null) wallpaperFront.setRenderEffect(effect);
+        if (wallpaperBack != null) wallpaperBack.setRenderEffect(effect);
     }
 
     /** Capture wallpaper-only content after home chrome has been hidden, blur
@@ -1527,7 +1650,7 @@ public class LauncherActivity extends Activity {
             return;
         }
 
-        final ImageView layer = legacyGridBlurLayer;
+        final ImageView layer = drawerBlurLayer;
         final FrameLayout content = root;
         if (layer == null || content == null || screenW <= 0 || screenH <= 0) {
             after.run();
@@ -1873,7 +1996,7 @@ public class LauncherActivity extends Activity {
                 d2.animate().cancel();
                 d2.setAlpha(1f);
                 d2.setTranslationY(0f);
-                applyDrawerBlur(true);
+                applyDrawerBlur(true, false);
                 setHomeChromeVisible(false);
                 RecyclingShelfView sh = shelf;
                 if (sh != null) sh.setVisibility(View.INVISIBLE);
@@ -2083,12 +2206,15 @@ public class LauncherActivity extends Activity {
         // clears the ImageView drawables. Keeps the activity from having
         // to know about wallpaper memory hygiene at all.
         if (wallpaperCtl != null) { wallpaperCtl.releaseBitmaps(); wallpaperCtl = null; }
-        if (legacyGridBlurLayer != null) legacyGridBlurLayer.setImageDrawable(null);
+        if (drawerBlurLayer != null) {
+            drawerBlurLayer.animate().cancel();
+            drawerBlurLayer.setImageDrawable(null);
+        }
         if (legacyGridBlurBitmap != null && !legacyGridBlurBitmap.isRecycled()) {
             legacyGridBlurBitmap.recycle();
         }
         legacyGridBlurBitmap = null;
-        legacyGridBlurLayer = null;
+        drawerBlurLayer = null;
         legacyGridBlurCapturePending = false;
         wallpaperFront = null; wallpaperBack = null; clockView = null; shelf = null;
         drawer = null;
@@ -2358,15 +2484,19 @@ public class LauncherActivity extends Activity {
         // snapshot pre-painted) — no second decode, no flicker.
         wallpaperCtl.loadSnapshotSync();
 
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
-            legacyGridBlurLayer = new ImageView(this);
-            legacyGridBlurLayer.setScaleType(ImageView.ScaleType.FIT_XY);
-            legacyGridBlurLayer.setVisibility(View.GONE);
-            legacyGridBlurLayer.setImportantForAccessibility(
-                    View.IMPORTANT_FOR_ACCESSIBILITY_NO);
-            root.addView(legacyGridBlurLayer,
-                    new FrameLayout.LayoutParams(MATCH, MATCH));
+        drawerBlurLayer = new ImageView(this);
+        drawerBlurLayer.setScaleType(Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+                ? ImageView.ScaleType.CENTER_CROP : ImageView.ScaleType.FIT_XY);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            float radius = dp(24);
+            drawerBlurLayer.setRenderEffect(RenderEffect.createBlurEffect(
+                    radius, radius, Shader.TileMode.CLAMP));
         }
+        drawerBlurLayer.setAlpha(0f);
+        drawerBlurLayer.setVisibility(View.GONE);
+        drawerBlurLayer.setImportantForAccessibility(
+                View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        root.addView(drawerBlurLayer, new FrameLayout.LayoutParams(MATCH, MATCH));
 
         final int favoritesMarginH = dp(32);
         final int favoritesBottom = dp(18);
@@ -5410,8 +5540,13 @@ public class LauncherActivity extends Activity {
                         fillVisible();
                         DrawerCell cv2 = attached.get(target);
                         if (cv2 != null) {
-                            boolean p = fastNav; fastNav = deferredFast;
-                            try { cv2.requestFocus(); } finally { fastNav = p; }
+                            boolean p = fastNav;
+                            fastNav = deferredFast;
+                            try {
+                                cv2.requestFocus();
+                            } finally {
+                                fastNav = p;
+                            }
                         }
                     });
                 }
@@ -5448,71 +5583,74 @@ public class LauncherActivity extends Activity {
         }
 
         // ── open / close ─────────────────────────────────────────────────
-        void open(int focusIdx) {
+        void open(int focusIdx, float sourceCenterY) {
             closing = false;
-            // Defensive: a prior close() that was interrupted (animate().cancel()
-            // from onPause/forceHide, or a rapid close→open re-trigger) can leave
-            // this view pinned at LAYER_TYPE_HARDWARE with a stale cached GPU
-            // texture — withLayer()'s automatic layer-type restore only fires on
-            // natural animator completion, not on cancel(). Force it back to
-            // NONE up front so open() never starts its tween by re-blending an
-            // old snapshot (the "glitter" artifact).
-            setLayerType(LAYER_TYPE_NONE, null);
-            setVisibility(VISIBLE);
-            setAlpha(0f);
-            int h = getHeight() > 0 ? getHeight() : screenH;
-            setTranslationY(h * 0.06f);
+            // Defensive: interrupted withLayer() animations can leave a stale
+            // hardware texture. Always start from a live, untransformed view.
             animate().cancel();
-            animate().alpha(1f).translationY(0f)
-                    .setDuration(DRAWER_ANIM_MS).setInterpolator(SCROLL_EASE)
-                    // Hardware layer for the duration of the fade: the drawer
-                    // is a ViewGroup full of banner+label cells, so animating
-                    // its alpha would otherwise re-blend every child every
-                    // frame. withLayer() flattens it to a single GPU texture
-                    // for the tween then drops the layer — smoother on weak TV
-                    // GPUs, zero steady-state cost.
-                    .withLayer()
-                    // Keep the ring glued to the focused cell as the whole
-                    // drawer slides up (the cells move with the parent
-                    // translation, so a one-shot positionRing would be left
-                    // offset by the residual slide once the tween ends).
-                    .setUpdateListener(a -> {
-                        DrawerCell fc = attached.get(focusedIndex);
-                        if (fc != null && fc.isFocused()) LauncherActivity.this.positionRing(fc);
-                    })
-                    .start();
+            animate().setUpdateListener(null);
+            setLayerType(LAYER_TYPE_NONE, null);
+            setTranslationY(0f);
+            setAlpha(0f);
+            setVisibility(VISIBLE);
+
             final int fi = focusIdx;
-            // Focus after a layout pass so the target cell exists.
-            post(() -> requestFocusOnIndex(fi, true));
+            // Wait for the now-visible MATCH_PARENT drawer to lay out. Starting
+            // at alpha zero prevents a one-frame flash at its resting position.
+            post(() -> {
+                if (destroyed || closing || getVisibility() != VISIBLE) return;
+                fillVisible();
+                DrawerCell target = attached.get(fi);
+                int h = getHeight() > 0 ? getHeight() : screenH;
+                float targetCenterY = LauncherActivity.this.cellIconCenterYInRoot(target);
+                float startOffset = Float.isFinite(sourceCenterY)
+                        && Float.isFinite(targetCenterY)
+                        ? NavigationMotion.surfaceOffsetY(sourceCenterY, targetCenterY, h)
+                        : h * 0.06f;
+                setTranslationY(startOffset);
+                requestFocusOnIndex(fi, true);
+                animate().alpha(1f).translationY(0f)
+                        .setDuration(DRAWER_ANIM_MS).setInterpolator(SCROLL_EASE)
+                        // Flatten the full-screen drawer only while it moves;
+                        // there is no steady-state layer or allocation cost.
+                        .withLayer()
+                        // Keep the optional ring attached while its parent
+                        // travels from the home row to the grid.
+                        .setUpdateListener(a -> {
+                            DrawerCell fc = attached.get(focusedIndex);
+                            if (fc != null && fc.isFocused()) {
+                                LauncherActivity.this.positionRing(fc);
+                            }
+                        })
+                        .start();
+            });
         }
 
-        void close(Runnable after) {
+        void close(float targetCenterY, Runnable after) {
             closing = true;
             animate().cancel();
-            // Hide the ring up front so it doesn't trail the downward slide.
-            RingView rv0 = ringView; if (rv0 != null) rv0.setVisibility(View.INVISIBLE);
+            // Hide the ring up front so it does not trail the surface while
+            // the home row and its own selector fade back in underneath.
+            RingView rv0 = ringView;
+            if (rv0 != null) rv0.setVisibility(View.INVISIBLE);
             int h = getHeight() > 0 ? getHeight() : screenH;
-            animate().alpha(0f).translationY(h * 0.06f)
+            DrawerCell focusedCell = attached.get(focusedIndex);
+            float currentCenterY = LauncherActivity.this.cellIconCenterYInRoot(focusedCell);
+            float endOffset = Float.isFinite(targetCenterY)
+                    && Float.isFinite(currentCenterY)
+                    ? getTranslationY() + NavigationMotion.surfaceOffsetY(
+                            targetCenterY, currentCenterY, h)
+                    : getTranslationY() + h * 0.06f;
+            animate().alpha(0f).translationY(endOffset)
                     .setDuration(DRAWER_ANIM_MS).setInterpolator(SCROLL_EASE)
-                    // Clear the open() ring-glue update listener. ViewPropertyAnimator
-                    // retains mUpdateListener across cancel()+start(), so without this
-                    // the open-time positionRing listener keeps firing during the close
-                    // tween and re-shows the ring we just hid above, trailing the slide.
+                    // Clear the open-time ring tracker. ViewPropertyAnimator
+                    // retains update listeners across cancel()+start().
                     .setUpdateListener(null)
                     .withLayer()
                     .withEndAction(() -> {
                         setVisibility(GONE);
-                        setTranslationY(0f); setAlpha(1f);
-                        // Explicit layer-type reset. withLayer() is documented to
-                        // restore the pre-animation layer type on completion, but
-                        // that restore rides on the animator's end listener — the
-                        // same listener that a competing animate().cancel() (rapid
-                        // re-toggle, or onPause tearing down mid-close) can skip.
-                        // Setting it back to NONE here, unconditionally, is cheap
-                        // and makes the reset happen regardless of how the tween
-                        // actually ended, closing the gap that let a stale GPU
-                        // layer (and its blurred snapshot) survive into the next
-                        // open — the "blur lingers after close" regression.
+                        setTranslationY(0f);
+                        setAlpha(1f);
                         setLayerType(LAYER_TYPE_NONE, null);
                         closing = false;
                         if (after != null) after.run();
@@ -5533,7 +5671,7 @@ public class LauncherActivity extends Activity {
             setLayerType(LAYER_TYPE_NONE, null);
             setVisibility(GONE);
             setTranslationY(0f); setAlpha(1f);
-            LauncherActivity.this.applyDrawerBlur(false);
+            LauncherActivity.this.applyDrawerBlur(false, false);
             LauncherActivity.this.setHomeChromeVisible(true);
             RingView rv = ringView;
             if (rv != null) rv.setVisibility(View.INVISIBLE);
@@ -5790,12 +5928,17 @@ public class LauncherActivity extends Activity {
                         if (fastNav) {
                             setScaleX(f ? FOCUS_SCALE : 1f);
                             setScaleY(f ? FOCUS_SCALE : 1f);
+                            setTranslationX(0f);
+                            setTranslationY(0f);
                             setTranslationZ(f ? focusShadowZ : 0f);
-                            if (f && isAttachedToWindow() && getWidth() > 0) positionRing(DrawerCell.this);
+                            if (f && isAttachedToWindow() && getWidth() > 0) {
+                                positionRing(DrawerCell.this);
+                            }
                         } else if (f) {
                             animate().scaleX(FOCUS_SCALE).scaleY(FOCUS_SCALE)
                                      .translationZ(focusShadowZ)
-                                     .setDuration(FOCUS_DUR_MS).setInterpolator(FOCUS_IN_BOUNCE)
+                                     .setDuration(GRID_FOCUS_DUR_MS)
+                                     .setInterpolator(FOCUS_EASE)
                                      .setUpdateListener(focusUpdateListener).start();
                         } else {
                             animate().scaleX(1f).scaleY(1f)
@@ -9956,33 +10099,18 @@ public class LauncherActivity extends Activity {
         } catch (java.util.concurrent.RejectedExecutionException e) { bannerInflight.remove(key); }
     }
 
-    private void positionRing(View cell) {
-        RingView rv = ringView; FrameLayout r = root;
-        if (rv == null || r == null || !cell.isAttachedToWindow()) return;
-        if (cell.getWidth() == 0) return;
+    /** Root-relative center of a shelf or drawer cell's rendered artwork. */
+    private float cellIconCenterYInRoot(View cell) {
+        FrameLayout r = root;
+        if (cell == null || r == null || !cell.isAttachedToWindow()
+                || cell.getWidth() == 0) {
+            return Float.NaN;
+        }
         cell.getLocationOnScreen(ringCellLoc);
-        // Root location is stable for the activity's lifetime on a TV
-        // launcher — the activity window doesn't move until a
-        // configuration change resets us. Cache the first read and
-        // reuse it across every subsequent {@code positionRing} call.
-        // Saves one full {@link View#getLocationOnScreen} walk
-        // (~5 matrix multiplications + offset accumulations) per call.
-        // {@link #onConfigurationChanged} clears the flag so the next
-        // call refreshes against the new geometry.
         if (!rootLocCached) {
             r.getLocationOnScreen(ringRootLoc);
             rootLocCached = true;
         }
-
-        // Cells animate to scaleX/Y = FOCUS_SCALE on focus around the centre
-        // pivot. getLocationOnScreen returns the post-transform VISUAL
-        // top-left, which already includes the scale-induced offset. Each cell
-        // type can place its artwork at a different vertical center: favorites
-        // center the card in the taller home bar, while lower-grid cells start
-        // at the top of their label-bearing cell. Use the same center that the
-        // cell's onDraw() uses so the border hugs the artwork in both layouts.
-        float sx = cell.getScaleX();
-        float sy = cell.getScaleY();
         float iconCenterY = cachedIcyOffset;
         if (cell instanceof RecyclingShelfView.CellView) {
             iconCenterY = ((RecyclingShelfView.CellView) cell).icyOffset;
@@ -9991,8 +10119,21 @@ public class LauncherActivity extends Activity {
             iconCenterY = drawerCell.boundIndex >= 0 && drawerCell.boundIndex < homeCount
                     ? cellHpx / 2f : drawerCell.icyOffset;
         }
+        return ringCellLoc[1] - ringRootLoc[1] + iconCenterY * cell.getScaleY();
+    }
+
+    private void positionRing(View cell) {
+        RingView rv = ringView; FrameLayout r = root;
+        if (rv == null || r == null || !cell.isAttachedToWindow()) return;
+        if (cell.getWidth() == 0) return;
+        float cy = cellIconCenterYInRoot(cell);
+        if (!Float.isFinite(cy)) return;
+        // Cells animate to scaleX/Y = FOCUS_SCALE on focus around the centre
+        // pivot. getLocationOnScreen returns the post-transform VISUAL
+        // top-left, which already includes the scale-induced offset.
+        float sx = cell.getScaleX();
+        float sy = cell.getScaleY();
         float cx = (ringCellLoc[0] - ringRootLoc[0]) + cell.getWidth() * sx / 2f;
-        float cy = (ringCellLoc[1] - ringRootLoc[1]) + iconCenterY * sy;
         // Keep the ring's own scale in lockstep with the cell so its radius
         // hugs the focused icon — a fixed-size ring sat INSIDE the focused
         // icon by ~2.5dp, which read as misalignment.

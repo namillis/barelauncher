@@ -25,6 +25,7 @@ import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputConnection;
 import android.widget.EditText;
 import android.widget.FrameLayout;
+import android.widget.ImageView;
 
 import androidx.test.core.app.ActivityScenario;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
@@ -37,6 +38,7 @@ import org.junit.runner.RunWith;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.util.ArrayList;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 
@@ -336,6 +338,51 @@ public class LauncherCustomizationTest {
     }
 
     @Test
+    public void drawerBlurCrossfade_reachesBlurredAndSharpEndStates() {
+        try (ActivityScenario<LauncherActivity> scenario =
+                     launchSettledLauncher()) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                awaitValue(scenario, "loaded wallpaper drawable", activity -> {
+                    ImageView wallpaper = (ImageView) field(activity, "wallpaperFront");
+                    return wallpaper.getDrawable() != null ? wallpaper : null;
+                });
+            }
+
+            scenario.onActivity(activity -> {
+                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+                    Bitmap preview = Bitmap.createBitmap(160, 90, Bitmap.Config.ARGB_8888);
+                    preview.eraseColor(0xFF315A82);
+                    setField(activity, "legacyGridBlurBitmap", preview);
+                }
+                View layer = (View) field(activity, "drawerBlurLayer");
+                invoke(activity, "applyDrawerBlur",
+                        new Class<?>[] {boolean.class}, true);
+                assertEquals(View.VISIBLE, layer.getVisibility());
+                assertEquals(0f, layer.getAlpha(), 0.01f);
+                assertEquals(NavigationMotion.SURFACE_DURATION_MS,
+                        layer.animate().getDuration());
+            });
+
+            awaitValue(scenario, "blurred wallpaper end state", activity -> {
+                ImageView layer = (ImageView) field(activity, "drawerBlurLayer");
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    return layer.getVisibility() == View.GONE ? layer : null;
+                }
+                return layer.getVisibility() == View.VISIBLE
+                        && Math.abs(layer.getAlpha() - 1f) < 0.01f ? layer : null;
+            });
+
+            scenario.onActivity(activity -> invoke(activity, "applyDrawerBlur",
+                    new Class<?>[] {boolean.class}, false));
+            awaitValue(scenario, "sharp wallpaper end state", activity -> {
+                ImageView layer = (ImageView) field(activity, "drawerBlurLayer");
+                return layer.getVisibility() == View.GONE
+                        && Math.abs(layer.getAlpha()) < 0.01f ? layer : null;
+            });
+        }
+    }
+
+    @Test
     public void favoritesGlass_matchesHomeAndGridAcrossBlurPaths() {
         try (ActivityScenario<LauncherActivity> scenario =
                      launchSettledLauncher()) {
@@ -452,6 +499,94 @@ public class LauncherCustomizationTest {
                 assertEquals(expectedFavorite.packageName, returnedFavorite.packageName);
                 assertEquals(View.VISIBLE,
                         ((View) field(activity, "shelf")).getVisibility());
+            });
+        }
+    }
+
+    @Test
+    public void immediateDrawerClose_cancelsDeferredOpen() {
+        try (ActivityScenario<LauncherActivity> scenario =
+                     launchSettledLauncher()) {
+            focusHomeCell(scenario);
+            AtomicReference<View> drawerRef = new AtomicReference<>();
+            scenario.onActivity(activity -> {
+                View drawer = (View) field(activity, "drawer");
+                drawerRef.set(drawer);
+                invoke(drawer, "open",
+                        new Class<?>[] {int.class, float.class}, 0, 900f);
+                invoke(drawer, "close",
+                        new Class<?>[] {float.class, Runnable.class}, 900f, null);
+            });
+
+            awaitValue(scenario, "deferred drawer open to remain cancelled", activity -> {
+                View drawer = drawerRef.get();
+                return drawer.getVisibility() == View.GONE
+                        && !(Boolean) field(drawer, "closing") ? drawer : null;
+            });
+        }
+    }
+
+    @Test
+    public void gridFocusStaysAnchoredForSingleStepAndHeldNavigation() {
+        try (ActivityScenario<LauncherActivity> scenario =
+                     launchSettledLauncher()) {
+            focusHomeCell(scenario);
+            scenario.onActivity(activity -> invoke(activity, "openDrawer"));
+            View drawer = awaitVisibleViewField(scenario, "drawer");
+            awaitFocusedCell(scenario, "DrawerCell");
+            awaitValue(scenario, "settled drawer surface", activity ->
+                    Math.abs(drawer.getTranslationY()) < 0.5f
+                            && Math.abs(drawer.getAlpha() - 1f) < 0.01f
+                            ? drawer : null);
+
+            AtomicReference<View> focusedCell = new AtomicReference<>();
+            scenario.onActivity(activity -> {
+                int previous = (Integer) field(drawer, "focusedIndex");
+                @SuppressWarnings("unchecked")
+                ArrayList<AppInfo> displayed =
+                        (ArrayList<AppInfo>) field(drawer, "displayed");
+                int columns = (Integer) field(activity, "layoutColumns");
+                int homeCount = (Integer) field(activity, "homeCount");
+                int target = HomeDrawerModel.navRight(
+                        columns, previous, displayed.size(), homeCount);
+                assertTrue("test grid needs an adjacent app", target != previous);
+
+                invoke(drawer, "requestFocusOnIndex",
+                        new Class<?>[] {int.class, boolean.class}, target, false);
+                View focused = activity.getWindow().getDecorView().findFocus();
+                assertNotNull(focused);
+                assertEquals(target, ((Integer) field(focused, "boundIndex")).intValue());
+                assertEquals("single-step focus must not move the card",
+                        0f, focused.getTranslationX(), 0.1f);
+                assertEquals("single-step focus must not move the card",
+                        0f, focused.getTranslationY(), 0.1f);
+                focusedCell.set(focused);
+            });
+
+            View settledCell = awaitValue(scenario, "settled anchored focus scale",
+                    activity -> Math.abs(focusedCell.get().getTranslationX()) < 0.1f
+                            && Math.abs(focusedCell.get().getTranslationY()) < 0.1f
+                            && Math.abs(focusedCell.get().getScaleX() - 1.10f) < 0.01f
+                            ? focusedCell.get() : null);
+
+            scenario.onActivity(activity -> {
+                int previous = (Integer) field(settledCell, "boundIndex");
+                @SuppressWarnings("unchecked")
+                ArrayList<AppInfo> displayed =
+                        (ArrayList<AppInfo>) field(drawer, "displayed");
+                int columns = (Integer) field(activity, "layoutColumns");
+                int homeCount = (Integer) field(activity, "homeCount");
+                int target = HomeDrawerModel.navRight(
+                        columns, previous, displayed.size(), homeCount);
+                assertTrue("test grid needs a second adjacent app", target != previous);
+
+                invoke(drawer, "requestFocusOnIndex",
+                        new Class<?>[] {int.class, boolean.class}, target, true);
+                View focused = activity.getWindow().getDecorView().findFocus();
+                assertNotNull(focused);
+                assertEquals(0f, focused.getTranslationX(), 0.1f);
+                assertEquals(0f, focused.getTranslationY(), 0.1f);
+                assertEquals(1.10f, focused.getScaleX(), 0.01f);
             });
         }
     }
