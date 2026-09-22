@@ -13,6 +13,7 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import android.content.res.Configuration;
 import android.os.SystemClock;
+import android.util.SparseArray;
 import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewGroup;
@@ -63,6 +64,28 @@ public class LauncherCustomizationTest {
 
             View rename = awaitVisibleViewField(scenario, "menuRename");
             assertNotNull(rename);
+        }
+    }
+
+    @Test
+    public void contextMenu_dimsAttachedCardsSynchronouslyAtFiveAndSixColumns() {
+        Context context = getInstrumentation().getTargetContext();
+        String prefsName = (String) staticField(LauncherActivity.class, "PREFS");
+        String columnsKey = (String) staticField(
+                LauncherActivity.class, "KEY_LAYOUT_COLUMNS");
+        SharedPreferences preferences = context.getSharedPreferences(
+                prefsName, Context.MODE_PRIVATE);
+        boolean hadColumns = preferences.contains(columnsKey);
+        int oldColumns = preferences.getInt(columnsKey, LayoutOptions.DEFAULT_COLUMNS);
+
+        try {
+            assertSynchronizedContextMenuDimming(preferences, columnsKey, 5);
+            assertSynchronizedContextMenuDimming(preferences, columnsKey, 6);
+        } finally {
+            SharedPreferences.Editor restore = preferences.edit();
+            if (hadColumns) restore.putInt(columnsKey, oldColumns);
+            else restore.remove(columnsKey);
+            assertTrue(restore.commit());
         }
     }
 
@@ -462,6 +485,47 @@ public class LauncherCustomizationTest {
             if (hadColor) restore.putInt(colorKey, oldColor);
             else restore.remove(colorKey);
             assertTrue(restore.commit());
+        }
+    }
+
+    private static void assertSynchronizedContextMenuDimming(
+            SharedPreferences preferences, String columnsKey, int columns) {
+        assertTrue(preferences.edit().putInt(columnsKey, columns).commit());
+        try (ActivityScenario<LauncherActivity> scenario = launchSettledLauncher()) {
+            View homeCell = focusHomeCell(scenario);
+            scenario.onActivity(activity -> {
+                assertEquals(columns, ((Integer) field(activity, "layoutColumns")).intValue());
+                assertTrue(homeCell.performLongClick());
+                View shelf = (View) field(activity, "shelf");
+                int selected = (Integer) field(homeCell, "boundIndex");
+                assertAttachedCardAlphas(shelf, selected, true);
+                invoke(shelf, "exitReorderMode", new Class<?>[] {boolean.class}, false);
+                assertAttachedCardAlphas(shelf, selected, false);
+            });
+
+            scenario.onActivity(activity -> invoke(activity, "openDrawer"));
+            View drawerCell = awaitFocusedCell(scenario, "DrawerCell");
+            scenario.onActivity(activity -> {
+                assertTrue(drawerCell.performLongClick());
+                View drawer = (View) field(activity, "drawer");
+                int selected = (Integer) field(drawerCell, "boundIndex");
+                assertAttachedCardAlphas(drawer, selected, true);
+                invoke(drawer, "exitReorderMode", new Class<?>[] {boolean.class}, false);
+                assertAttachedCardAlphas(drawer, selected, false);
+            });
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void assertAttachedCardAlphas(
+            View host, int selectedIndex, boolean menuOpen) {
+        SparseArray<View> attached = (SparseArray<View>) field(host, "attached");
+        assertTrue("expected more than one attached app card", attached.size() > 1);
+        for (int i = 0; i < attached.size(); i++) {
+            int index = attached.keyAt(i);
+            float expected = menuOpen && index != selectedIndex ? 0.4f : 1f;
+            assertEquals("card alpha at index " + index,
+                    expected, attached.valueAt(i).getAlpha(), 0.001f);
         }
     }
 

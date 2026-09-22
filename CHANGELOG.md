@@ -7,6 +7,13 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Fixed
+
+- **App cards dim together when their context menu opens.** Reorder mode now
+  commits card opacity through compositor properties in one UI transaction,
+  preventing five-column and other layouts from visibly repainting cards in
+  sequence while keeping the selected card bright.
+
 ## [2.5.1] — 2026-09-21
 
 ### Added

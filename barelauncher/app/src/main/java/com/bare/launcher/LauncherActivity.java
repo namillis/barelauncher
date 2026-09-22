@@ -190,6 +190,10 @@ public class LauncherActivity extends Activity {
     // under the 200 ms threshold where animations start to feel sluggish.
     private static final int    FOCUS_DUR_MS   = 150;
     private static final int    UNFOCUS_DUR_MS = 100;
+    // Compositor-level alpha for every non-selected card while the context
+    // menu is open. Applying the property to all attached cards in one UI
+    // transaction keeps the dim transition on one frame at every grid density.
+    private static final float  REORDER_DIM_ALPHA = 0.4f;
     // Pull-down drawer open/close transition duration. Open and close share
     // this single value so the two feel symmetric — the close used to be
     // shorter (140 ms) and restored the home screen instantly, which read as
@@ -3622,15 +3626,15 @@ public class LauncherActivity extends Activity {
             menuDismissedForMove = false;
             moveActive    = false;
             LauncherActivity.this.menuHost = this;   // shelf owns the shared menu now
-            rebindAll();
+            syncReorderVisuals();
             // Lazy-init the context menu overlay on first entry. Cold start
             // does not pay for this overlay's view-tree construction; users
             // who never long-press a shelf cell never trigger it.
             LauncherActivity.this.ensureMenuOverlay();
             CellView cv = attached.get(idx); if (cv != null) LauncherActivity.this.showContextMenu(cv);
-            // rebindAll() calls cv.layout() directly — no requestLayout in flight.
-            // post() fires after the current message finishes, which is exactly when
-            // the cell's screen coordinates are stable. No global layout listener needed.
+            // The attached cells are already laid out and alpha changes are
+            // batched until the next traversal. post() therefore runs after
+            // the synchronized dim state and stable cell coordinates commit.
             post(LauncherActivity.this::updateRingAfterMove);
         }
 
@@ -3642,12 +3646,10 @@ public class LauncherActivity extends Activity {
             moveActive  = false;
             hideContextMenu();
             if (persist) saveOrder();
-            rebindAll();
-            // rebindAll() calls requestFocus() on focusedIndex, which triggers the focus
-            // listener. Because reorderMode is already false at that point, the focus-loss
-            // branch on the OLD drag cell would hide the ring, and the focus-gain branch on
-            // the new cell would post(positionRing). To avoid the 1-frame invisible flicker,
-            // we post an explicit reposition that runs in the same message as the focus event.
+            syncReorderVisuals();
+            // syncReorderVisuals() requests focus on focusedIndex. Post an
+            // explicit reposition so the ring remains aligned even when the
+            // platform reports that the same cell already owned focus.
             final int idx = focusedIndex;
             post(() -> {
                 CellView cv = attached.get(idx);
@@ -3764,10 +3766,15 @@ public class LauncherActivity extends Activity {
             LauncherActivity.this.updateRingAfterMove();
         }
 
-        private void rebindAll() {
+        /** Apply the complete reorder visual state synchronously. View alpha is
+         *  a compositor property, so every attached card commits in the same
+         *  frame instead of waiting for separate child onDraw invalidations. */
+        private void syncReorderVisuals() {
             for (int i = 0; i < attached.size(); i++) {
                 int idx = attached.keyAt(i);
-                if (idx >= 0 && idx < displayed.size()) bindCell(attached.valueAt(i), idx);
+                CellView cell = attached.valueAt(i);
+                cell.setAlpha(reorderMode && idx != dragIndex
+                        ? REORDER_DIM_ALPHA : 1f);
             }
             int targetIdx = reorderMode ? dragIndex : focusedIndex;
             CellView focused = attached.get(targetIdx);
@@ -3776,6 +3783,14 @@ public class LauncherActivity extends Activity {
                 focused.invalidate();
             }
             if (reorderMode) updateMenuHighlight();
+        }
+
+        private void rebindAll() {
+            for (int i = 0; i < attached.size(); i++) {
+                int idx = attached.keyAt(i);
+                if (idx >= 0 && idx < displayed.size()) bindCell(attached.valueAt(i), idx);
+            }
+            syncReorderVisuals();
         }
 
         @Override protected void onDetachedFromWindow() {
@@ -4176,6 +4191,7 @@ public class LauncherActivity extends Activity {
             AppInfo app = displayed.get(index);
             int left = cellLeft(index), top = (getMeasuredHeight() - cellH) / 2;
             cv.bind(app, index);
+            cv.setAlpha(reorderMode && index != dragIndex ? REORDER_DIM_ALPHA : 1f);
             cv.layout(left, top, left + cellW, top + cellH);
             cv.invalidate();
         }
@@ -4748,15 +4764,7 @@ public class LauncherActivity extends Activity {
                 float cx  = w / 2f;
                 float icy = icyOffset;
 
-                boolean isDragTarget = reorderMode && boundIndex == dragIndex;
-
-                if (reorderMode && !isDragTarget) {
-                    iconPaint.setAlpha(102);
-                    drawIcon(canvas, cx, icy);
-                    iconPaint.setAlpha(255);
-                } else {
-                    drawIcon(canvas, cx, icy);
-                }
+                drawIcon(canvas, cx, icy);
 
                 // Show label: always for focused+normal, always for drag target in reorder.
                 //
@@ -5249,6 +5257,7 @@ public class LauncherActivity extends Activity {
             AppInfo app = displayed.get(index);
             int left = cellLeft(index), top = cellTop(index);
             cv.bind(app, index);
+            cv.setAlpha(reorderMode && index != dragIndex ? REORDER_DIM_ALPHA : 1f);
             cv.layout(left, top, left + cellW, top + cellH);
             cv.invalidate();
         }
@@ -5521,11 +5530,22 @@ public class LauncherActivity extends Activity {
             menuSelection = RecyclingShelfView.MENU_MOVE;
             LauncherActivity.this.menuHost = this;
             LauncherActivity.this.ensureMenuOverlay();
-            rebindAttached(); // repaint drag dimming
+            syncReorderDimming();
             DrawerCell cv = attached.get(idx);
             if (cv != null) LauncherActivity.this.showContextMenu(cv);
             post(() -> { DrawerCell c = attached.get(dragIndex);
                          if (c != null) LauncherActivity.this.positionRing(c); });
+        }
+
+        /** Apply alpha to every attached drawer card before the next frame.
+         *  The render thread receives one property transaction regardless of
+         *  card size, row count, or recycler attachment order. */
+        private void syncReorderDimming() {
+            for (int i = 0; i < attached.size(); i++) {
+                int idx = attached.keyAt(i);
+                attached.valueAt(i).setAlpha(reorderMode && idx != dragIndex
+                        ? REORDER_DIM_ALPHA : 1f);
+            }
         }
 
         /** Stage-2 entry: hide the menu; D-pad now performs 2-D moves. */
@@ -5542,7 +5562,7 @@ public class LauncherActivity extends Activity {
             int idx = dragIndex; dragIndex = -1;
             hideContextMenu();
             if (persist) { saveOrder(); saveHomeCount(); }
-            rebindAttached(); // clear drag dimming
+            syncReorderDimming();
             final int f = Math.min(Math.max(0, idx), Math.max(0, displayed.size() - 1));
             focusedIndex = f;
             post(() -> {
@@ -5908,13 +5928,7 @@ public class LauncherActivity extends Activity {
                 boolean favorite = boundIndex >= 0 && boundIndex < hc();
                 float icy = favorite ? cellH / 2f : icyOffset;
                 boolean isDragTarget = reorderMode && boundIndex == dragIndex;
-                if (reorderMode && !isDragTarget) {
-                    iconPaint.setAlpha(102);
-                    drawIcon(canvas, cx, icy);
-                    iconPaint.setAlpha(255);
-                } else {
-                    drawIcon(canvas, cx, icy);
-                }
+                drawIcon(canvas, cx, icy);
                 // The !rebuildingApps guard mirrors CellView.onDraw's
                 // identical fix: isFocused() reads real platform focus
                 // directly, bypassing DrawerCell's own focus-listener (and
