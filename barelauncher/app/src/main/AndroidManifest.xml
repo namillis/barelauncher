@@ -34,6 +34,11 @@
     <!-- Required to enumerate installed apps for the launcher grid -->
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
 
+    <!-- One-time Google TV setup connects only to the device-local ADB
+         daemon (127.0.0.1:5555) after the user enables debugging and accepts
+         Android's authorization prompt. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
     <!-- Read the active network's transport so the WiFi pill can show a
          filled (connected) vs outline (not connected) glyph. Normal
          install-time permission — no runtime prompt. -->

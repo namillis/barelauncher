@@ -812,8 +812,7 @@ public class LauncherActivity extends Activity {
     // ── Settings panel (v1.3.0) ──────────────────────────────────────────
     //
     // Top-level overlay that opens as a dropdown under the gear button
-    // and holds five rows: Manage hidden apps, Button shortcuts, Set
-    // wallpaper, Show clock toggle, System Settings. Replaces the
+    // and hosts the page-based launcher settings rows. Replaces the
     // wallpaper toolbar pill (deleted) and the "Manage hidden apps" 7th
     // row that used to live inside the keymap card. Same visual language
     // as the keymap card (dark slate plate + 1 dp white rim, drop-down
@@ -828,6 +827,11 @@ public class LauncherActivity extends Activity {
     private android.widget.LinearLayout settingsColumn    = null;
     /** Selection cursor inside the panel — UP/DOWN cycle, OK activates. */
     private int                         settingsSelectedRow = 0;
+    /** Prevents duplicate local-ADB operations while authorization or package
+     *  commands are in flight. */
+    private final AtomicBoolean         googleTvSetupRunning = new AtomicBoolean(false);
+    private AlertDialog                 googleTvSetupDialog = null;
+    private GoogleTvSetup.Status        googleTvSetupStatus = null;
     /** Row to land on the next time the panel is opened. Set by
      *  {@link #activateSettingsRow} before drilling into the keymap card,
      *  consumed inside {@link #showSettingsPanel}. v1.3.2 fix for the
@@ -900,7 +904,7 @@ public class LauncherActivity extends Activity {
      *  sub-page rebuilds the row column; BACK returns to MAIN unless a changed
      *  Layout page closes to apply its new geometry. */
     private static final int SPAGE_MAIN = 0, SPAGE_WALLPAPER = 1,
-            SPAGE_BACKUP = 2, SPAGE_LAYOUT = 3;
+            SPAGE_BACKUP = 2, SPAGE_LAYOUT = 3, SPAGE_LAUNCHER_SETUP = 4;
     private int settingsPage = SPAGE_MAIN;
 
     // Stable settings-row identifiers (NOT list positions — the panel is now
@@ -924,10 +928,13 @@ public class LauncherActivity extends Activity {
     private static final int SR_CARD_CORNER        = 16;
     private static final int SR_FOCUS_BORDER       = 17;
     private static final int SR_FOCUS_COLOR        = 18;
+    private static final int SR_LAUNCHER_SETUP_MENU = 19; // → SPAGE_LAUNCHER_SETUP
+    private static final int SR_LAUNCHER_ACTIVATE   = 20;
+    private static final int SR_LAUNCHER_RESTORE    = 21;
 
     private static final int[] SROWS_MAIN = {
             SR_HIDE_APPS, SR_KEYMAP, SR_LAYOUT_MENU, SR_WALLPAPER_MENU, SR_CLOCK,
-            SR_BACKUP_MENU, SR_SYSTEM, SR_ABOUT };
+            SR_BACKUP_MENU, SR_LAUNCHER_SETUP_MENU, SR_SYSTEM, SR_ABOUT };
     private static final int[] SROWS_WALLPAPER = {
             SR_SET_WALLPAPER, SR_SLIDESHOW_FOLDER, SR_SLIDESHOW_DURATION,
             SR_SLIDESHOW_RESTART, SR_IDLE_HIDE };
@@ -935,6 +942,8 @@ public class LauncherActivity extends Activity {
             SR_BACKUP, SR_RESTORE };
     private static final int[] SROWS_LAYOUT = {
             SR_LAYOUT_COLUMNS, SR_CARD_CORNER, SR_FOCUS_BORDER, SR_FOCUS_COLOR };
+    private static final int[] SROWS_LAUNCHER_SETUP = {
+            SR_LAUNCHER_ACTIVATE, SR_LAUNCHER_RESTORE };
 
     /** Main-list row to re-select when returning from a sub-page. */
     private int settingsReturnRowId = SR_WALLPAPER_MENU;
@@ -942,10 +951,11 @@ public class LauncherActivity extends Activity {
     /** Row IDs of the page currently shown. */
     private int[] settingsPageRows() {
         switch (settingsPage) {
-            case SPAGE_WALLPAPER: return SROWS_WALLPAPER;
-            case SPAGE_BACKUP:    return SROWS_BACKUP;
-            case SPAGE_LAYOUT:    return SROWS_LAYOUT;
-            default:              return SROWS_MAIN;
+            case SPAGE_WALLPAPER:      return SROWS_WALLPAPER;
+            case SPAGE_BACKUP:         return SROWS_BACKUP;
+            case SPAGE_LAYOUT:         return SROWS_LAYOUT;
+            case SPAGE_LAUNCHER_SETUP: return SROWS_LAUNCHER_SETUP;
+            default:                   return SROWS_MAIN;
         }
     }
 
@@ -971,6 +981,9 @@ public class LauncherActivity extends Activity {
             case SR_IDLE_HIDE:          return R.string.settings_row_idle_hide;
             case SR_BACKUP:             return R.string.settings_row_backup;
             case SR_RESTORE:            return R.string.settings_row_restore;
+            case SR_LAUNCHER_SETUP_MENU: return R.string.settings_row_launcher_setup_menu;
+            case SR_LAUNCHER_ACTIVATE:  return R.string.settings_row_launcher_activate;
+            case SR_LAUNCHER_RESTORE:   return R.string.settings_row_launcher_restore;
             default:                    return R.string.settings_row_about;
         }
     }
@@ -985,7 +998,8 @@ public class LauncherActivity extends Activity {
             || rowId == SR_SLIDESHOW_FOLDER
             || rowId == SR_SLIDESHOW_DURATION
             || rowId == SR_SLIDESHOW_RESTART
-            || rowId == SR_IDLE_HIDE;
+            || rowId == SR_IDLE_HIDE
+            || rowId == SR_LAUNCHER_SETUP_MENU;
     }
 
     /** Widest state string an indicator row can show, used to reserve width at
@@ -1000,6 +1014,7 @@ public class LauncherActivity extends Activity {
             case SR_SLIDESHOW_DURATION: return "< 1.5 min >";   // widest bracketed label
             case SR_SLIDESHOW_RESTART:  return "Off";
             case SR_IDLE_HIDE:          return "< 5 min >";     // widest bracketed label
+            case SR_LAUNCHER_SETUP_MENU: return "Working";
             default:                    return "Full";           // SR_CLOCK
         }
     }
@@ -2190,6 +2205,11 @@ public class LauncherActivity extends Activity {
         customIconStore = null;
         pendingCustomIconPackage = null;
         pendingCustomIconLabel = null;
+        AlertDialog activeSetupDialog = googleTvSetupDialog;
+        googleTvSetupDialog = null;
+        if (activeSetupDialog != null && activeSetupDialog.isShowing()) {
+            activeSetupDialog.dismiss();
+        }
         AlertDialog activeRenameDialog = renameDialog;
         renameDialog = null;
         renameInput = null;
@@ -7137,9 +7157,8 @@ public class LauncherActivity extends Activity {
     // ── Settings panel (v1.3.0) ──────────────────────────────────────────
     //
     // Top-level overlay that opens as a dropdown under the gear toolbar
-    // pill. Five rows: Manage hidden apps, Button shortcuts, Set
-    // wallpaper, Show clock toggle, System Settings. Visual language
-    // matches the keymap card (deep slate plate + 1 dp white rim, drop-
+    // pill. Hosts the page-based settings rows and drill-through pages.
+    // Visual language matches the keymap card (deep slate plate + 1 dp white rim, drop-
     // down animation pivoted at the gear's top-right corner). Same
     // selection vocabulary too: idle row transparent + light-grey text,
     // selected row a bright frosted-white pill with dark text.
@@ -7286,7 +7305,7 @@ public class LauncherActivity extends Activity {
         card.setClipChildren(false);
         card.setClipToPadding(false);
 
-        // Vertical column of 5 rows.
+        // Vertical column for the current page's rows.
         android.widget.LinearLayout col = new android.widget.LinearLayout(this);
         col.setOrientation(android.widget.LinearLayout.VERTICAL);
         col.setClipChildren(false);
@@ -7393,6 +7412,7 @@ public class LauncherActivity extends Activity {
      *  settings panel keeps the visual continuity. */
     private void showSettingsPanel() {
         if (destroyed) return;
+        googleTvSetupStatus = GoogleTvSetup.inspect(this);
         if (settingsOverlay == null) buildSettingsPanel();
         FrameLayout ov = settingsOverlay;
         final android.widget.LinearLayout card = settingsCard;
@@ -7494,10 +7514,8 @@ public class LauncherActivity extends Activity {
     }
 
     /** Repaint each row to reflect {@link #settingsSelectedRow} and the
-     *  current {@link #showClock} toggle state. Cheap — five rows, each
-     *  a small LinearLayout with two children. The "selected" row gets a
-     *  bright frosted-white pill and dark text + dark indicator; idle
-     *  rows get transparent backgrounds and light-grey text. */
+     *  current state values. The small current-page row set is repainted in
+     *  place; selected rows use a bright frosted-white pill with dark text. */
     private void refreshSettingsRows() {
         android.widget.LinearLayout col = settingsColumn;
         if (col == null) return;
@@ -7565,6 +7583,17 @@ public class LauncherActivity extends Activity {
                     ind.setText(idleHideLabel());
                     boolean on = idleHideSec != 0;
                     ind.setTextColor(on ? (sel ? selTx : 0xFF7DD3FC) : (sel ? 0x66111114 : 0x66FFFFFF));
+                } else if (rowId == SR_LAUNCHER_SETUP_MENU) {
+                    GoogleTvSetup.State state = googleTvSetupStatus == null
+                            ? GoogleTvSetup.State.NOT_CONFIGURED : googleTvSetupStatus.state;
+                    boolean working = googleTvSetupRunning.get();
+                    ind.setText(working ? R.string.google_tv_status_working
+                            : state == GoogleTvSetup.State.ACTIVE ? R.string.google_tv_status_active
+                            : state == GoogleTvSetup.State.PARTIAL ? R.string.google_tv_status_partial
+                            : R.string.google_tv_status_not_set);
+                    boolean ready = state == GoogleTvSetup.State.ACTIVE && !working;
+                    ind.setTextColor(ready ? (sel ? selTx : 0xFF7DD3FC)
+                                           : (sel ? 0x66111114 : 0x99FFFFFF));
                 } else {
                     ind.setTextColor(sel ? selTx : idleTx);
                 }
@@ -7727,6 +7756,17 @@ public class LauncherActivity extends Activity {
                 }
                 refreshSettingsRows();
                 break;
+            case SR_LAUNCHER_SETUP_MENU:
+                enterSettingsPage(SPAGE_LAUNCHER_SETUP, SR_LAUNCHER_SETUP_MENU);
+                break;
+            case SR_LAUNCHER_ACTIVATE:
+                hideSettingsPanel();
+                showGoogleTvSetupConfirmation(false);
+                break;
+            case SR_LAUNCHER_RESTORE:
+                hideSettingsPanel();
+                showGoogleTvSetupConfirmation(true);
+                break;
             case SR_SYSTEM:
                 hideSettingsPanel();
                 openSystemSettings();
@@ -7765,6 +7805,77 @@ public class LauncherActivity extends Activity {
             default:
                 break;
         }
+    }
+
+    /** Confirm the elevated package changes before connecting to local ADB. */
+    private void showGoogleTvSetupConfirmation(boolean restore) {
+        if (googleTvSetupRunning.get()) {
+            showToast(getString(R.string.google_tv_setup_connecting));
+            return;
+        }
+        AlertDialog existing = googleTvSetupDialog;
+        if (existing != null && existing.isShowing()) existing.dismiss();
+        int title = restore ? R.string.google_tv_restore_title : R.string.google_tv_setup_title;
+        int message = restore ? R.string.google_tv_restore_message : R.string.google_tv_setup_message;
+        int action = restore ? R.string.google_tv_restore_confirm : R.string.google_tv_setup_confirm;
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle(title)
+                .setMessage(message)
+                .setPositiveButton(action, (ignored, which) -> runGoogleTvSetup(restore))
+                .setNegativeButton(android.R.string.cancel, null)
+                .create();
+        googleTvSetupDialog = dialog;
+        dialog.setOnDismissListener(ignored -> {
+            if (googleTvSetupDialog == dialog) googleTvSetupDialog = null;
+        });
+        dialog.setOnShowListener(ignored -> {
+            View positive = dialog.getButton(AlertDialog.BUTTON_POSITIVE);
+            if (positive != null) positive.requestFocus();
+        });
+        dialog.show();
+    }
+
+    /** Run the local-ADB handshake and fixed package commands off the UI thread. */
+    private void runGoogleTvSetup(boolean restore) {
+        if (!googleTvSetupRunning.compareAndSet(false, true)) return;
+        showToast(getString(R.string.google_tv_setup_connecting));
+        refreshSettingsRows();
+        Context appContext = getApplicationContext();
+        Thread worker = new Thread(() -> {
+            android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND);
+            GoogleTvSetup.Result result = restore
+                    ? GoogleTvSetup.restore(appContext)
+                    : GoogleTvSetup.setup(appContext);
+            googleTvSetupRunning.set(false);
+            uiHandler.post(() -> {
+                if (destroyed) return;
+                googleTvSetupStatus = result.status;
+                refreshSettingsRows();
+                showGoogleTvSetupResult(restore, result);
+            });
+        }, restore ? "BareLauncher-GoogleTvRestore" : "BareLauncher-GoogleTvSetup");
+        worker.start();
+    }
+
+    private void showGoogleTvSetupResult(boolean restore, GoogleTvSetup.Result result) {
+        int title = result.success
+                ? (restore ? R.string.google_tv_restore_success_title
+                           : R.string.google_tv_setup_success_title)
+                : R.string.google_tv_setup_failed_title;
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle(title)
+                .setMessage(result.message)
+                .setPositiveButton(android.R.string.ok, null)
+                .create();
+        googleTvSetupDialog = dialog;
+        dialog.setOnDismissListener(ignored -> {
+            if (googleTvSetupDialog == dialog) googleTvSetupDialog = null;
+        });
+        dialog.setOnShowListener(ignored -> {
+            View ok = dialog.getButton(AlertDialog.BUTTON_POSITIVE);
+            if (ok != null) ok.requestFocus();
+        });
+        dialog.show();
     }
 
     private void stepLayoutColumns(int direction) {

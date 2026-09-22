@@ -493,8 +493,11 @@ android {
         // Bumped 49 → 50: 2.5.4 hides the entire Liquid Edge favorites
         // surface while idle, leaving wallpaper and top controls visible.
         // SemVer PATCH — idle-mode presentation correction.
-        versionCode   = 50
-        versionName   = "2.5.4"
+        // Bumped 50 → 51: 2.6.0 adds one-time local ADB setup that can
+        // persistently select BareLauncher as Google TV's Home app.
+        // SemVer MINOR — additive launcher-setup capability.
+        versionCode   = 51
+        versionName   = "2.6.0"
         resourceConfigurations += listOf("en")
 
         // Instrumentation test runner. Required so :app:connectedDebugAndroidTest
@@ -554,6 +557,8 @@ android {
     buildTypes {
         debug {
             isDebuggable = true
+            applicationIdSuffix = ".debug"
+            versionNameSuffix = "-debug"
         }
         release {
             isMinifyEnabled   = true
@@ -565,7 +570,8 @@ android {
         }
     }
 
-    // Strip all non-code bloat — no Kotlin, no META-INF noise
+    // Keep library metadata out of the APK; dadb itself is called from Java
+    // but its implementation uses Kotlin and Okio, so their bytecode remains.
     packaging {
         resources {
             excludes += setOf(
@@ -623,23 +629,26 @@ android {
     }
 }
 
-// Block Kotlin from entering via any transitive dep — applies to the
-// PRODUCTION classpaths only. Test classpaths are exempt so androidx.test
-// can pull its dependencies (which transitively include Kotlin runtime
-// stubs in newer versions). The Kotlin runtime stays out of the released
-// APK because androidTestImplementation produces a separate test APK.
+// Keep AndroidX KTX out of production. The local-ADB client is implemented
+// in Kotlin internally, so kotlin-stdlib must remain on the production
+// classpath even though BareLauncher's own source stays pure Java.
 configurations.matching {
     val n = it.name
     !n.contains("Test", ignoreCase = true) &&
             !n.startsWith("androidTest") &&
             !n.startsWith("test")
 }.configureEach {
-    exclude(group = "org.jetbrains.kotlin")
     exclude(group = "androidx.core", module = "core-ktx")
 }
 
 dependencies {
-    // ZERO external dependencies in the production APK — pure Android SDK only.
+    // Local ADB client used only by the explicit Google TV setup / restore
+    // actions. Pure protocol implementation: no bundled native executable and
+    // one universal APK across ARMv7, ARM64, and x86_64.
+    implementation("dev.mobile:dadb:1.2.9") {
+        exclude(group = "org.graalvm.buildtools")
+        exclude(group = "org.junit.platform")
+    }
 
     // Local JVM unit tests (run on the host, no emulator). Tiny, only
     // the launcher's pure-Java helpers (e.g. AppOrder) are exercised here.
