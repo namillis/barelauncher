@@ -11132,7 +11132,7 @@ public class LauncherActivity extends Activity {
     }
 
     /** Fade home UI in (active=false) or out (active=true).
-     *  Views hidden: shelf, netBtn, mapperBtnView, ringView.
+     *  Views hidden: shelf and its blur layer, netBtn, mapperBtnView, ringView.
      *  Views kept visible: wallpaper (always), clockView (always).
      *  Duration: 500 ms out, 250 ms in — smooth but snappy. */
     private void applyIdleHide(boolean hide) {
@@ -11141,12 +11141,14 @@ public class LauncherActivity extends Activity {
         float target = hide ? 0f : 1f;
         long dur     = hide ? 500L : 250L;
         RecyclingShelfView s = shelf;
+        FavoritesBlurView blur = favoritesBlurLayer;
         View nb = netBtn, mb = mapperBtnView;
         RingView rv = ringView;
-        if (s  != null) s .animate().alpha(target).setDuration(dur).start();
-        if (nb != null) nb.animate().alpha(hide ? 0f : 0.6f).setDuration(dur).start();
-        if (mb != null) mb.animate().alpha(hide ? 0f : 0.6f).setDuration(dur).start();
-        if (rv != null) rv.animate().alpha(target).setDuration(dur).start();
+        if (s    != null) s   .animate().alpha(target).setDuration(dur).start();
+        if (blur != null) blur.animate().alpha(target).setDuration(dur).start();
+        if (nb   != null) nb  .animate().alpha(hide ? 0f : 0.6f).setDuration(dur).start();
+        if (mb   != null) mb  .animate().alpha(hide ? 0f : 0.6f).setDuration(dur).start();
+        if (rv   != null) rv  .animate().alpha(target).setDuration(dur).start();
         // Clock stays fully visible — it is the reason idle-hide exists
         // (wallpaper + clock, nothing else).
     }
