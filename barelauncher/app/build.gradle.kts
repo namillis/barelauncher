@@ -484,8 +484,11 @@ android {
         // Bumped 46 → 47: 2.5.1 adds an optional named-color focus border
         // and increases selected app cards to 1.10x scale.
         // SemVer PATCH — user-visible focus navigation refinement.
-        versionCode   = 47
-        versionName   = "2.5.1"
+        // Bumped 47 → 48: 2.5.2 synchronizes context-menu card dimming and
+        // adds Liquid Edge glass for Home and grid favorites on API 26+.
+        // SemVer PATCH — visual polish with no settings or data migration.
+        versionCode   = 48
+        versionName   = "2.5.2"
         resourceConfigurations += listOf("en")
 
         // Instrumentation test runner. Required so :app:connectedDebugAndroidTest
