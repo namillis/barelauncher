@@ -485,7 +485,7 @@ public class LauncherCustomizationTest {
     }
 
     @Test
-    public void idleHide_closesAppGridBeforeHidingFavoritesSurface() {
+    public void idleHide_closesAppGridForStaticWallpaper() {
         try (ActivityScenario<LauncherActivity> scenario =
                      launchSettledLauncher()) {
             focusHomeCell(scenario);
@@ -493,8 +493,6 @@ public class LauncherCustomizationTest {
             View drawer = awaitVisibleViewField(scenario, "drawer");
 
             scenario.onActivity(activity -> {
-                setField(activity, "slideshowFolderUri", "test-folder");
-                setField(activity, "slideshowDurationSec", 60);
                 setField(activity, "idleHideSec", 60);
                 setField(activity, "idleHideGeneration", 1);
                 invoke(activity, "beginIdleHide", new Class<?>[] {int.class}, 1);

@@ -400,7 +400,7 @@ public class LauncherActivity extends Activity {
     private final java.util.List<String[]> folderPickerData = new ArrayList<>();
     private int folderPickerSel = 0;
 
-    // ── Idle UI hide (slideshow-only visual cleanup) ─────────────────────
+    // ── Idle UI hide ──────────────────────────────────────────────────────
     /** Idle-hide timeout options in seconds: Off, 1 min, 2 min, 3 min, 5 min. */
     private static final int[]  IDLE_HIDE_STEPS_SEC = { 0, 60, 120, 180, 300 };
     private static final String KEY_IDLE_HIDE       = "idle_hide_sec";
@@ -11109,7 +11109,7 @@ public class LauncherActivity extends Activity {
         // The caller will handle this gracefully (no-op or fallback).
     }
 
-    // ── Idle UI hide (slideshow-only visual cleanup) ──────────────────────
+    // ── Idle UI hide ───────────────────────────────────────────────────────
 
     /** Cycle the idle-hide timeout. {@code dir} is +1 (forward) or -1 (back). */
     private void stepIdleHide(int dir) {
@@ -11129,8 +11129,7 @@ public class LauncherActivity extends Activity {
      *  the old Home-only fade is invisible and idle mode appears broken. */
     private void beginIdleHide(int generation) {
         if (generation != idleHideGeneration || destroyed || uiPaused
-                || !slideshowActive() || idleHideSec <= 0
-                || anyOverlayLogicallyOpen()) {
+                || idleHideSec <= 0 || anyOverlayLogicallyOpen()) {
             return;
         }
         AppDrawer d = drawer;
@@ -11141,8 +11140,7 @@ public class LauncherActivity extends Activity {
             }
             closeDrawer(() -> {
                 if (generation == idleHideGeneration && !destroyed && !uiPaused
-                        && slideshowActive() && idleHideSec > 0
-                        && !anyOverlayLogicallyOpen()) {
+                        && idleHideSec > 0 && !anyOverlayLogicallyOpen()) {
                     applyIdleHide(true);
                 }
             });
@@ -11152,12 +11150,12 @@ public class LauncherActivity extends Activity {
     }
 
     /** (Re)arm the idle-hide timer. Safe to call on every key press —
-     *  cancels any pending trigger and posts a fresh one if the feature
-     *  is configured and the slideshow is active. No-op otherwise. */
+     *  cancels any pending trigger and posts a fresh one when enabled.
+     *  It intentionally works with both static wallpapers and slideshows. */
     private void scheduleIdleHide() {
         uiHandler.removeCallbacks(idleHideTrigger);
         idleHideGeneration++;
-        if (idleHideSec > 0 && slideshowActive() && !uiPaused)
+        if (idleHideSec > 0 && !uiPaused)
             uiHandler.postDelayed(idleHideTrigger, idleHideSec * 1000L);
     }
 
