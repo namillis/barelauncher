@@ -7,6 +7,15 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Changed
+
+- **Moving between the favorites bar and app grid now follows one continuous
+  path.** The selected grid surface glides from the favorites position over a
+  short 220 ms eased transition and reverses the same path when returning home.
+- **Single-step grid navigation settles in the D-pad direction.** A newly
+  focused card travels the final 10 dp over 110 ms while keeping its existing
+  scale, shadow, and optional border; held navigation still snaps immediately.
+
 ## [2.5.2] — 2026-09-22
 
 ### Changed

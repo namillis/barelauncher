@@ -487,8 +487,11 @@ android {
         // Bumped 47 → 48: 2.5.2 synchronizes context-menu card dimming and
         // adds Liquid Edge glass for Home and grid favorites on API 26+.
         // SemVer PATCH — visual polish with no settings or data migration.
-        versionCode   = 48
-        versionName   = "2.5.2"
+        // Bumped 48 → 49: 2.5.3 eases the home-to-grid surface transition
+        // and adds a short directional settle between grid apps.
+        // SemVer PATCH — user-visible navigation motion refinement.
+        versionCode   = 49
+        versionName   = "2.5.3"
         resourceConfigurations += listOf("en")
 
         // Instrumentation test runner. Required so :app:connectedDebugAndroidTest

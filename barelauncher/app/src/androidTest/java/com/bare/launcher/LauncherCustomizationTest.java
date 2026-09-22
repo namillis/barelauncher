@@ -37,6 +37,7 @@ import org.junit.runner.RunWith;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.util.ArrayList;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 
@@ -452,6 +453,95 @@ public class LauncherCustomizationTest {
                 assertEquals(expectedFavorite.packageName, returnedFavorite.packageName);
                 assertEquals(View.VISIBLE,
                         ((View) field(activity, "shelf")).getVisibility());
+            });
+        }
+    }
+
+    @Test
+    public void immediateDrawerClose_cancelsDeferredOpen() {
+        try (ActivityScenario<LauncherActivity> scenario =
+                     launchSettledLauncher()) {
+            focusHomeCell(scenario);
+            AtomicReference<View> drawerRef = new AtomicReference<>();
+            scenario.onActivity(activity -> {
+                View drawer = (View) field(activity, "drawer");
+                drawerRef.set(drawer);
+                invoke(drawer, "open",
+                        new Class<?>[] {int.class, float.class}, 0, 900f);
+                invoke(drawer, "close",
+                        new Class<?>[] {float.class, Runnable.class}, 900f, null);
+            });
+
+            awaitValue(scenario, "deferred drawer open to remain cancelled", activity -> {
+                View drawer = drawerRef.get();
+                return drawer.getVisibility() == View.GONE
+                        && !(Boolean) field(drawer, "closing") ? drawer : null;
+            });
+        }
+    }
+
+    @Test
+    public void gridFocusGlidesTowardAdjacentAppAndHeldNavigationSnaps() {
+        try (ActivityScenario<LauncherActivity> scenario =
+                     launchSettledLauncher()) {
+            focusHomeCell(scenario);
+            scenario.onActivity(activity -> invoke(activity, "openDrawer"));
+            View drawer = awaitVisibleViewField(scenario, "drawer");
+            awaitFocusedCell(scenario, "DrawerCell");
+            awaitValue(scenario, "settled drawer surface", activity ->
+                    Math.abs(drawer.getTranslationY()) < 0.5f
+                            && Math.abs(drawer.getAlpha() - 1f) < 0.01f
+                            ? drawer : null);
+
+            AtomicReference<View> glidingCell = new AtomicReference<>();
+            scenario.onActivity(activity -> {
+                int previous = (Integer) field(drawer, "focusedIndex");
+                @SuppressWarnings("unchecked")
+                ArrayList<AppInfo> displayed =
+                        (ArrayList<AppInfo>) field(drawer, "displayed");
+                int columns = (Integer) field(activity, "layoutColumns");
+                int homeCount = (Integer) field(activity, "homeCount");
+                int target = HomeDrawerModel.navRight(
+                        columns, previous, displayed.size(), homeCount);
+                assertTrue("test grid needs an adjacent app", target != previous);
+
+                invoke(drawer, "requestFocusOnIndex",
+                        new Class<?>[] {int.class, boolean.class}, target, false);
+                View focused = activity.getWindow().getDecorView().findFocus();
+                assertNotNull(focused);
+                assertEquals(target, ((Integer) field(focused, "boundIndex")).intValue());
+                float distance = NavigationMotion.GRID_FOCUS_GLIDE_DP
+                        * activity.getResources().getDisplayMetrics().density;
+                assertEquals("rightward focus enters from the left",
+                        -distance, focused.getTranslationX(), 1f);
+                assertEquals(0f, focused.getTranslationY(), 0.1f);
+                glidingCell.set(focused);
+            });
+
+            View settledCell = awaitValue(scenario, "settled directional focus glide",
+                    activity -> Math.abs(glidingCell.get().getTranslationX()) < 0.1f
+                            && Math.abs(glidingCell.get().getTranslationY()) < 0.1f
+                            && Math.abs(glidingCell.get().getScaleX() - 1.10f) < 0.01f
+                            ? glidingCell.get() : null);
+
+            scenario.onActivity(activity -> {
+                int previous = (Integer) field(settledCell, "boundIndex");
+                @SuppressWarnings("unchecked")
+                ArrayList<AppInfo> displayed =
+                        (ArrayList<AppInfo>) field(drawer, "displayed");
+                int columns = (Integer) field(activity, "layoutColumns");
+                int homeCount = (Integer) field(activity, "homeCount");
+                int target = HomeDrawerModel.navRight(
+                        columns, previous, displayed.size(), homeCount);
+                assertTrue("test grid needs a second adjacent app", target != previous);
+
+                invoke(drawer, "requestFocusOnIndex",
+                        new Class<?>[] {int.class, boolean.class}, target, true);
+                View focused = activity.getWindow().getDecorView().findFocus();
+                assertNotNull(focused);
+                assertEquals(0f, focused.getTranslationX(), 0.1f);
+                assertEquals(0f, focused.getTranslationY(), 0.1f);
+                assertEquals(1.10f, focused.getScaleX(), 0.01f);
             });
         }
     }
