@@ -130,6 +130,22 @@ public class WallpaperControllerSampleSizeTest {
         assertTrue("must be a positive power of two", s > 0 && (s & (s - 1)) == 0);
     }
 
+    @Test public void frostedPreviewSize_scalesAt1080pAnd4k() {
+        int[] hd = WallpaperController.frostedPreviewSize(1920, 1080);
+        assertEquals(160, hd[0]);
+        assertEquals(90, hd[1]);
+
+        int[] uhd = WallpaperController.frostedPreviewSize(3840, 2160);
+        assertEquals(320, uhd[0]);
+        assertEquals(180, uhd[1]);
+    }
+
+    @Test public void frostedPreviewSize_keepsSafeMinimumForTinyViewports() {
+        int[] size = WallpaperController.frostedPreviewSize(1, 1);
+        assertEquals(120, size[0]);
+        assertEquals(68, size[1]);
+    }
+
     @Test public void tinyScreen_capsAtSafetyLimit() {
         // 1 × 1 screen with a normal source: same termination contract.
         int s = WallpaperController.computeSampleSize(4000, 4000, 1, 1);

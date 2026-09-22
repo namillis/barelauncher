@@ -11,6 +11,7 @@ import android.graphics.Paint;
 import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.Drawable;
 import android.net.Uri;
+import android.os.Build;
 import android.view.animation.Interpolator;
 import android.view.View;
 import android.widget.ImageView;
@@ -140,6 +141,9 @@ final class WallpaperController {
     private volatile boolean destroyed;
     /** Invalidates the plate-sized frosted copy when wallpaper pixels change. */
     private Runnable frameInvalidator;
+    /** Tiny CPU-readable, already-blurred wallpaper used only on API 26–30.
+     *  Replaced on the UI thread whenever wallpaper pixels change. */
+    private Bitmap frostedPreview;
 
     /** Set true by {@link #loadSnapshotSync()} when the on-disk snapshot
      *  was successfully rendered into FRONT. {@link #loadStored()} reads
@@ -147,6 +151,16 @@ final class WallpaperController {
      *  already represents it would just re-render the same content and
      *  the resulting cross-fade reads as a flicker on every cold start. */
     private boolean snapshotPrePainted = false;
+
+    // ── Frosted preview constants ────────────────────────────────────────
+
+    /** About 160×90 at 1080p: enough detail for glass color while staying
+     *  below 60 KiB of Java heap. */
+    private static final int FROSTED_PREVIEW_DIVISOR = 12;
+    private static final int FROSTED_PREVIEW_MIN_W = 120;
+    private static final int FROSTED_PREVIEW_MIN_H = 68;
+    private static final int FROSTED_BLUR_RADIUS = 3;
+    private static final int FROSTED_BLUR_PASSES = 3;
 
     // ── Snapshot constants ────────────────────────────────────────────────
 
@@ -255,6 +269,20 @@ final class WallpaperController {
         invalidateFrostedFrame();
     }
 
+    /** UI-thread view of the tiny legacy glass source. Callers must not mutate it. */
+    Bitmap frostedPreview() {
+        return frostedPreview;
+    }
+
+    static int[] frostedPreviewSize(int screenWidth, int screenHeight) {
+        return new int[] {
+                Math.max(FROSTED_PREVIEW_MIN_W,
+                        Math.max(1, screenWidth) / FROSTED_PREVIEW_DIVISOR),
+                Math.max(FROSTED_PREVIEW_MIN_H,
+                        Math.max(1, screenHeight) / FROSTED_PREVIEW_DIVISOR)
+        };
+    }
+
     private void invalidateFrostedFrame() {
         Runnable invalidator = frameInvalidator;
         if (invalidator != null) invalidator.run();
@@ -265,6 +293,16 @@ final class WallpaperController {
     void onConfigurationChanged(int newScreenW, int newScreenH) {
         this.screenW = newScreenW;
         this.screenH = newScreenH;
+        Bitmap current = frostedPreview;
+        if (current == null || current.isRecycled()) return;
+        int[] size = frostedPreviewSize(newScreenW, newScreenH);
+        if (current.getWidth() == size[0] && current.getHeight() == size[1]) return;
+        try {
+            Bitmap resized = Bitmap.createScaledBitmap(current, size[0], size[1], true);
+            if (resized != current) replaceFrostedPreview(resized);
+        } catch (OutOfMemoryError | RuntimeException ignored) {
+            // Keep the previous tiny preview; stretching it is still a valid fallback.
+        }
     }
 
     // ── Cold-start snapshot ──────────────────────────────────────────────
@@ -321,9 +359,11 @@ final class WallpaperController {
             f.delete();
         }
         if (bmp == null) return false;
+        Bitmap preview = decodeFrostedPreview(f);
         front.setImageBitmap(bmp);
         front.setAlpha(1f);
-        invalidateFrostedFrame();
+        if (preview != null) replaceFrostedPreview(preview);
+        else invalidateFrostedFrame();
         snapshotPrePainted = true;
         return true;
     }
@@ -367,11 +407,19 @@ final class WallpaperController {
                 // the wallpaper worker thread, and the wallpaper never
                 // appears for the rest of the session.
             }
+            final Bitmap preview = createFrostedPreview(bmp);
             // Promote the ARGB to HARDWARE for display. The ARGB is
             // recycled inside the helper on success.
             final Bitmap fb = toHardwareOrSelf(bmp);
             systemLoading.set(false);
-            if (!destroyed) host.runOnUiThread(() -> { if (fb != null) crossfade(fb); });
+            if (!destroyed) {
+                host.runOnUiThread(() -> {
+                    if (preview != null) replaceFrostedPreview(preview);
+                    if (fb != null) crossfade(fb);
+                });
+            } else if (preview != null && !preview.isRecycled()) {
+                preview.recycle();
+            }
         });
     }
 
@@ -451,25 +499,33 @@ final class WallpaperController {
             // tick — wasted I/O and encoder heap. The snapshot's only job
             // is instant cold-start paint of the last user-chosen image.
             if (persist && argb != null && !destroyed) writeSnapshotBestEffort(argb);
+            final Bitmap preview = createFrostedPreview(argb);
             // Promote to HARDWARE for display.
             final Bitmap fb = toHardwareOrSelf(argb);
             guard.set(false);
-            if (!destroyed) host.runOnUiThread(() -> {
-                if (fb != null) {
-                    crossfade(fb);
-                    if (persist) prefs.edit().putString(prefKeyUri, uri.toString()).apply();
-                } else if (persist) {
-                    // Only a user-initiated pick falls back to the system
-                    // wallpaper / surfaces a toast on decode failure. A
-                    // slideshow-rotation failure (one bad, deleted, or
-                    // permission-revoked photo) must not evict the user's
-                    // chosen folder wallpaper or pop a toast during an
-                    // unattended rotation — just skip this tick; the next
-                    // interval tries the next image.
-                    if (toastFn != null) toastFn.show(host.getString(R.string.toast_wallpaper_load_failed));
-                    loadSystem();
-                }
-            });
+            if (!destroyed) {
+                host.runOnUiThread(() -> {
+                    if (preview != null) replaceFrostedPreview(preview);
+                    if (fb != null) {
+                        crossfade(fb);
+                        if (persist) prefs.edit().putString(prefKeyUri, uri.toString()).apply();
+                    } else if (persist) {
+                        // Only a user-initiated pick falls back to the system
+                        // wallpaper / surfaces a toast on decode failure. A
+                        // slideshow-rotation failure (one bad, deleted, or
+                        // permission-revoked photo) must not evict the user's
+                        // chosen folder wallpaper or pop a toast during an
+                        // unattended rotation — just skip this tick; the next
+                        // interval tries the next image.
+                        if (toastFn != null) {
+                            toastFn.show(host.getString(R.string.toast_wallpaper_load_failed));
+                        }
+                        loadSystem();
+                    }
+                });
+            } else if (preview != null && !preview.isRecycled()) {
+                preview.recycle();
+            }
         });
     }
 
@@ -542,11 +598,96 @@ final class WallpaperController {
         recycleImageViewBitmap(back);
         if (front != null) front.setImageDrawable(null);
         if (back  != null) back .setImageDrawable(null);
+        Bitmap preview = frostedPreview;
+        frostedPreview = null;
         invalidateFrostedFrame();
+        if (preview != null && !preview.isRecycled()) preview.recycle();
         frameInvalidator = null;
     }
 
     // ── Internals ─────────────────────────────────────────────────────────
+
+    /** Build the tiny blurred glass source while a CPU-readable wallpaper
+     *  bitmap already exists. Never call this with a HARDWARE bitmap. */
+    private Bitmap createFrostedPreview(Bitmap source) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+                || source == null || source.isRecycled()
+                || source.getConfig() == Bitmap.Config.HARDWARE) return null;
+        int[] size = frostedPreviewSize(screenW, screenH);
+        try {
+            return rasterAndBlurPreview(source, size[0], size[1]);
+        } catch (OutOfMemoryError | RuntimeException ignored) {
+            return null;
+        }
+    }
+
+    private static Bitmap rasterAndBlurPreview(Bitmap source, int width, int height) {
+        Bitmap preview = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(preview);
+        Matrix matrix = new Matrix();
+        matrix.setScale((float) width / source.getWidth(),
+                (float) height / source.getHeight());
+        Paint paint = new Paint(Paint.FILTER_BITMAP_FLAG | Paint.DITHER_FLAG);
+        canvas.drawBitmap(source, matrix, paint);
+        return LegacyGridBlur.apply(preview,
+                FROSTED_BLUR_RADIUS, FROSTED_BLUR_PASSES);
+    }
+
+    /** Decode only a tiny ARGB copy from the cold-start snapshot. The full
+     *  wallpaper remains HARDWARE-backed; this second decode is bounded to
+     *  roughly 160×90 at 1080p before the blur runs. */
+    private Bitmap decodeFrostedPreview(File snapshot) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) return null;
+        int[] size = frostedPreviewSize(screenW, screenH);
+        try {
+            BitmapFactory.Options bounds = new BitmapFactory.Options();
+            bounds.inJustDecodeBounds = true;
+            try (FileInputStream input = new FileInputStream(snapshot)) {
+                BitmapFactory.decodeStream(input, null, bounds);
+            }
+            if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null;
+            int sample = 1;
+            while (bounds.outWidth / (sample * 2) >= size[0]
+                    && bounds.outHeight / (sample * 2) >= size[1]
+                    && sample < 0x8000) {
+                sample *= 2;
+            }
+            BitmapFactory.Options options = new BitmapFactory.Options();
+            options.inSampleSize = sample;
+            options.inPreferredConfig = Bitmap.Config.ARGB_8888;
+            Bitmap decoded;
+            try (FileInputStream input = new FileInputStream(snapshot)) {
+                decoded = BitmapFactory.decodeStream(input, null, options);
+            }
+            if (decoded == null) return null;
+            try {
+                return rasterAndBlurPreview(decoded, size[0], size[1]);
+            } finally {
+                if (!decoded.isRecycled()) decoded.recycle();
+            }
+        } catch (IOException | OutOfMemoryError | RuntimeException ignored) {
+            return null;
+        }
+    }
+
+    /** Swap the preview on the UI thread and defer recycling until the next
+     *  frame so no display list can still reference the previous pixels. */
+    private void replaceFrostedPreview(Bitmap next) {
+        if (next == null) return;
+        if (destroyed) {
+            if (!next.isRecycled()) next.recycle();
+            return;
+        }
+        Bitmap old = frostedPreview;
+        frostedPreview = next;
+        invalidateFrostedFrame();
+        if (old == null || old == next || old.isRecycled()) return;
+        Runnable recycle = () -> {
+            if (!old.isRecycled()) old.recycle();
+        };
+        if (front != null && front.isAttachedToWindow()) front.postOnAnimation(recycle);
+        else recycle.run();
+    }
 
     /** Cross-fade implementation. See class-level javadoc for the role
      *  invariant ("front is always front"). */

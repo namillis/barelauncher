@@ -7,6 +7,16 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+## [2.5.2] — 2026-09-22
+
+### Changed
+
+- **Favorites now sit on a Liquid Edge glass surface.** Home uses a stronger
+  wallpaper blur, translucent vertical tint, and layered reflective rim; the
+  mirrored favorites row in the app grid keeps the same shape with quieter
+  opacity over the already-blurred wallpaper. API 26–30 uses a tiny cached
+  software-blurred wallpaper preview while Android 12+ keeps live GPU blur.
+
 ### Fixed
 
 - **App cards dim together when their context menu opens.** Reorder mode now

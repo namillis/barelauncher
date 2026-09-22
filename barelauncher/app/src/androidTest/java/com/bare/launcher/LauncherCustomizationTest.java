@@ -12,6 +12,9 @@ import android.app.AlertDialog;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.content.res.Configuration;
+import android.graphics.Bitmap;
+import android.graphics.Color;
+import android.os.Build;
 import android.os.SystemClock;
 import android.util.SparseArray;
 import android.view.KeyEvent;
@@ -329,6 +332,72 @@ public class LauncherCustomizationTest {
             if (hadHidden) restore.putString(hiddenKey, oldHidden);
             else restore.remove(hiddenKey);
             assertTrue(restore.commit());
+        }
+    }
+
+    @Test
+    public void favoritesGlass_matchesHomeAndGridAcrossBlurPaths() {
+        try (ActivityScenario<LauncherActivity> scenario =
+                     launchSettledLauncher()) {
+            View blurLayer = awaitVisibleViewField(scenario, "favoritesBlurLayer");
+            scenario.onActivity(activity -> {
+                View shelf = (View) field(activity, "shelf");
+                assertTrue(shelf.getBackground() instanceof FavoritesGlassDrawable);
+            });
+
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+                scenario.onActivity(activity -> {
+                    WallpaperController controller = (WallpaperController)
+                            field(activity, "wallpaperCtl");
+                    if (controller.frostedPreview() != null) return;
+                    Bitmap source = Bitmap.createBitmap(320, 180, Bitmap.Config.ARGB_8888);
+                    source.eraseColor(0xFF315A82);
+                    Bitmap preview = (Bitmap) invokeForResult(controller,
+                            "createFrostedPreview", new Class<?>[] {Bitmap.class}, source);
+                    source.recycle();
+                    assertNotNull(preview);
+                    invoke(controller, "replaceFrostedPreview",
+                            new Class<?>[] {Bitmap.class}, preview);
+                });
+                Bitmap preview = awaitValue(scenario, "legacy frosted wallpaper preview", activity -> {
+                    WallpaperController controller = (WallpaperController)
+                            field(activity, "wallpaperCtl");
+                    Bitmap current = controller.frostedPreview();
+                    return current != null && !current.isRecycled() ? current : null;
+                });
+                int[] expectedSize = WallpaperController.frostedPreviewSize(
+                        getInstrumentation().getTargetContext().getResources()
+                                .getDisplayMetrics().widthPixels,
+                        getInstrumentation().getTargetContext().getResources()
+                                .getDisplayMetrics().heightPixels);
+                assertEquals(expectedSize[0], preview.getWidth());
+                assertEquals(expectedSize[1], preview.getHeight());
+            }
+
+            scenario.onActivity(activity -> invoke(activity, "openDrawer"));
+            View drawer = awaitVisibleViewField(scenario, "drawer");
+            scenario.onActivity(activity -> {
+                assertEquals(View.INVISIBLE, blurLayer.getVisibility());
+                FavoritesGlassDrawable homeGlass = (FavoritesGlassDrawable)
+                        ((View) field(activity, "shelf")).getBackground();
+                FavoritesGlassDrawable gridGlass = (FavoritesGlassDrawable)
+                        field(drawer, "favoritesGlass");
+                int[] homeFill = (int[]) field(homeGlass, "fillColors");
+                int[] gridFill = (int[]) field(gridGlass, "fillColors");
+                int[] homeInner = (int[]) field(homeGlass, "innerEdgeColors");
+                int[] gridInner = (int[]) field(gridGlass, "innerEdgeColors");
+                assertTrue("grid glass should be quieter than Home",
+                        Color.alpha(gridFill[gridFill.length - 1])
+                                < Color.alpha(homeFill[homeFill.length - 1]));
+                assertTrue("grid inner reflection should be quieter than Home",
+                        Color.alpha(gridInner[0]) < Color.alpha(homeInner[0]));
+                invoke(activity, "closeDrawer");
+            });
+
+            awaitValue(scenario, "restored Home glass", activity ->
+                    blurLayer.getVisibility() == View.VISIBLE
+                            && ((View) field(activity, "shelf")).getVisibility() == View.VISIBLE
+                            ? blurLayer : null);
         }
     }
 
@@ -714,6 +783,17 @@ public class LauncherCustomizationTest {
             Field field = target.getClass().getDeclaredField(name);
             field.setAccessible(true);
             field.set(target, value);
+        } catch (ReflectiveOperationException e) {
+            throw new AssertionError(e);
+        }
+    }
+
+    private static Object invokeForResult(Object target, String name,
+                                          Class<?>[] parameterTypes, Object... args) {
+        try {
+            Method method = target.getClass().getDeclaredMethod(name, parameterTypes);
+            method.setAccessible(true);
+            return method.invoke(target, args);
         } catch (ReflectiveOperationException e) {
             throw new AssertionError(e);
         }

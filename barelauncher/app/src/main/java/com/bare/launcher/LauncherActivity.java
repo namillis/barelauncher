@@ -2370,17 +2370,15 @@ public class LauncherActivity extends Activity {
 
         final int favoritesMarginH = dp(32);
         final int favoritesBottom = dp(18);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            favoritesBlurLayer = new FavoritesBlurView(
-                    this,
-                    favoritesMarginH,
-                    Math.max(0, screenH - favoritesBottom - cellHpx));
-            FrameLayout.LayoutParams blurLp = new FrameLayout.LayoutParams(MATCH, cellHpx);
-            blurLp.gravity = Gravity.BOTTOM;
-            blurLp.setMargins(favoritesMarginH, 0, favoritesMarginH, favoritesBottom);
-            favoritesBlurLayer.setLayoutParams(blurLp);
-            root.addView(favoritesBlurLayer);
-        }
+        favoritesBlurLayer = new FavoritesBlurView(
+                this,
+                favoritesMarginH,
+                Math.max(0, screenH - favoritesBottom - cellHpx));
+        FrameLayout.LayoutParams blurLp = new FrameLayout.LayoutParams(MATCH, cellHpx);
+        blurLp.gravity = Gravity.BOTTOM;
+        blurLp.setMargins(favoritesMarginH, 0, favoritesMarginH, favoritesBottom);
+        favoritesBlurLayer.setLayoutParams(blurLp);
+        root.addView(favoritesBlurLayer);
         wallpaperCtl.setFrameInvalidator(() -> {
             FavoritesBlurView favorites = favoritesBlurLayer;
             if (favorites != null) favorites.invalidate();
@@ -2393,11 +2391,8 @@ public class LauncherActivity extends Activity {
         shelfLp.gravity = Gravity.BOTTOM;
         shelfLp.setMargins(favoritesMarginH, 0, favoritesMarginH, favoritesBottom);
         shelf.setLayoutParams(shelfLp);
-        GradientDrawable favoritesPlate = new GradientDrawable();
-        favoritesPlate.setColor(0xA6141920);
-        favoritesPlate.setCornerRadius(Math.round(bannerHpx * 0.22f));
-        favoritesPlate.setStroke(Math.max(1, dp(1)), 0x33FFFFFF);
-        shelf.setBackground(favoritesPlate);
+        shelf.setBackground(new FavoritesGlassDrawable(
+                Math.round(bannerHpx * 0.22f), density, false));
         shelf.setContentDescription(getString(R.string.cd_app_shelf));
         shelf.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_YES);
         root.addView(shelf);
@@ -3381,14 +3376,19 @@ public class LauncherActivity extends Activity {
         }
     }
 
-    /** Draws only the wallpaper pixels behind the favorites plate, then lets
-     *  RenderEffect blur that small surface. App cards are separate child
-     *  views above it, so their artwork remains sharp and undarkened. */
+    /** Draws only the wallpaper pixels behind the favorites plate. Android
+     *  12+ blurs that small surface in hardware; API 26–30 draws the tiny
+     *  pre-blurred preview retained by WallpaperController. App cards remain
+     *  separate child views above it, so their artwork stays sharp. */
     @android.annotation.SuppressLint("NewApi")
     private final class FavoritesBlurView extends View {
         private final float sourceLeft;
         private final float sourceTop;
         private final float cornerRadius;
+        private final Paint legacyPreviewPaint = new Paint(
+                Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG | Paint.DITHER_FLAG);
+        private final Rect legacyPreviewSource = new Rect();
+        private final RectF legacyPreviewTarget = new RectF();
 
         FavoritesBlurView(Context context, float sourceLeft, float sourceTop) {
             super(context);
@@ -3405,13 +3405,43 @@ public class LauncherActivity extends Activity {
                     else outline.setRoundRect(0, 0, width, height, cornerRadius);
                 }
             });
-            float blur = dp(18);
-            setRenderEffect(RenderEffect.createBlurEffect(blur, blur, Shader.TileMode.CLAMP));
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                float blur = dp(24);
+                setRenderEffect(RenderEffect.createBlurEffect(
+                        blur, blur, Shader.TileMode.CLAMP));
+            }
         }
 
         @Override protected void onDraw(Canvas canvas) {
-            drawWallpaperSource(canvas, wallpaperBack);
-            drawWallpaperSource(canvas, wallpaperFront);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                drawWallpaperSource(canvas, wallpaperBack);
+                drawWallpaperSource(canvas, wallpaperFront);
+            } else {
+                drawLegacyPreview(canvas);
+            }
+        }
+
+        private void drawLegacyPreview(Canvas canvas) {
+            WallpaperController controller = wallpaperCtl;
+            Bitmap preview = controller != null ? controller.frostedPreview() : null;
+            int width = getWidth();
+            int height = getHeight();
+            if (preview == null || preview.isRecycled()
+                    || width <= 0 || height <= 0 || screenW <= 0 || screenH <= 0) return;
+            int previewW = preview.getWidth();
+            int previewH = preview.getHeight();
+            int left = Math.max(0, Math.min(previewW - 1,
+                    Math.round(sourceLeft * previewW / screenW)));
+            int top = Math.max(0, Math.min(previewH - 1,
+                    Math.round(sourceTop * previewH / screenH)));
+            int right = Math.max(left + 1, Math.min(previewW,
+                    Math.round((sourceLeft + width) * previewW / screenW)));
+            int bottom = Math.max(top + 1, Math.min(previewH,
+                    Math.round((sourceTop + height) * previewH / screenH)));
+            legacyPreviewSource.set(left, top, right, bottom);
+            legacyPreviewTarget.set(0f, 0f, width, height);
+            canvas.drawBitmap(preview, legacyPreviewSource,
+                    legacyPreviewTarget, legacyPreviewPaint);
         }
 
         private void drawWallpaperSource(Canvas canvas, ImageView source) {
@@ -4907,9 +4937,7 @@ public class LauncherActivity extends Activity {
         private int gridLeft = 0;   // left edge of the centred grid block (rows 1+)
         private int scrollY  = 0;
         private int contentH = 0;
-        private final RectF favoritesPlateBounds = new RectF();
-        private final Paint favoritesPlateFill = new Paint(Paint.ANTI_ALIAS_FLAG);
-        private final Paint favoritesPlateStroke = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final FavoritesGlassDrawable favoritesGlass;
 
         int     focusedIndex = 0;
         boolean reorderMode  = false;
@@ -4962,11 +4990,8 @@ public class LauncherActivity extends Activity {
             setClipChildren(false);
             setLayoutDirection(View.LAYOUT_DIRECTION_LOCALE);
             setWillNotDraw(false);
-            favoritesPlateFill.setStyle(Paint.Style.FILL);
-            favoritesPlateFill.setColor(0xA6141920);
-            favoritesPlateStroke.setStyle(Paint.Style.STROKE);
-            favoritesPlateStroke.setColor(0x33FFFFFF);
-            favoritesPlateStroke.setStrokeWidth(Math.max(1f, density));
+            favoritesGlass = new FavoritesGlassDrawable(
+                    Math.round(bannerHpx * 0.22f), density, true);
         }
 
         /** Clamped, effective home-row size for the current visible count. */
@@ -5164,15 +5189,9 @@ public class LauncherActivity extends Activity {
                     firstRowTop(), scrollY, cellH);
             if (bottom < 0f || top > getHeight()) return;
             float margin = dp(32);
-            float radius = Math.round(bannerHpx * 0.22f);
-            favoritesPlateBounds.set(margin, top, getWidth() - margin, bottom);
-            canvas.drawRoundRect(favoritesPlateBounds, radius, radius,
-                    favoritesPlateFill);
-            float inset = favoritesPlateStroke.getStrokeWidth() / 2f;
-            favoritesPlateBounds.inset(inset, inset);
-            canvas.drawRoundRect(favoritesPlateBounds, radius, radius,
-                    favoritesPlateStroke);
-            favoritesPlateBounds.inset(-inset, -inset);
+            favoritesGlass.setBounds(Math.round(margin), Math.round(top),
+                    Math.round(getWidth() - margin), Math.round(bottom));
+            favoritesGlass.draw(canvas);
         }
 
         private int rowLeftPad(int row, int len) {
