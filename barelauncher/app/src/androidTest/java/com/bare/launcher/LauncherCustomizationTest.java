@@ -485,6 +485,36 @@ public class LauncherCustomizationTest {
     }
 
     @Test
+    public void idleHide_closesAppGridBeforeHidingFavoritesSurface() {
+        try (ActivityScenario<LauncherActivity> scenario =
+                     launchSettledLauncher()) {
+            focusHomeCell(scenario);
+            scenario.onActivity(activity -> invoke(activity, "openDrawer"));
+            View drawer = awaitVisibleViewField(scenario, "drawer");
+
+            scenario.onActivity(activity -> {
+                setField(activity, "slideshowFolderUri", "test-folder");
+                setField(activity, "slideshowDurationSec", 60);
+                setField(activity, "idleHideSec", 60);
+                setField(activity, "idleHideGeneration", 1);
+                invoke(activity, "beginIdleHide", new Class<?>[] {int.class}, 1);
+            });
+
+            awaitValue(scenario, "hidden home surface after drawer closes", activity -> {
+                View shelf = (View) field(activity, "shelf");
+                View blur = (View) field(activity, "favoritesBlurLayer");
+                return drawer.getVisibility() == View.GONE
+                        && Math.abs(shelf.getAlpha()) < 0.01f
+                        && Math.abs(blur.getAlpha()) < 0.01f
+                        ? blur : null;
+            });
+
+            scenario.onActivity(activity -> invoke(activity, "applyIdleHide",
+                    new Class<?>[] {boolean.class}, false));
+        }
+    }
+
+    @Test
     public void drawerOpen_continuesWhenLegacyBlurFrameNeverArrives() {
         try (ActivityScenario<LauncherActivity> scenario =
                      launchSettledLauncher()) {

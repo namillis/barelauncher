@@ -410,15 +410,15 @@ public class LauncherActivity extends Activity {
     private int     idleHideSec    = 0;
     /** True while the UI is hidden; restored immediately on any key. */
     private boolean idleHideActive = false;
+    /** Changes on every timer reset so a completed drawer close cannot hide
+     *  the UI after the user has resumed navigating. */
+    private int idleHideGeneration = 0;
     /** Single Runnable posted to {@link #uiHandler} after each user action.
      *  Cancelled on key press, onPause, and when slideshow becomes inactive. */
     private final Runnable idleHideTrigger = new Runnable() {
         @Override
         public void run() {
-            if (!destroyed && !uiPaused && slideshowActive() && idleHideSec > 0
-                    && !anyOverlayLogicallyOpen()) {
-                applyIdleHide(true);
-            }
+            beginIdleHide(idleHideGeneration);
         }
     };
 
@@ -1389,6 +1389,13 @@ public class LauncherActivity extends Activity {
      *  otherwise the nearest home app; when the home row is empty it falls
      *  back to the toolbar so focus is never lost. */
     private void closeDrawer() {
+        closeDrawer(null);
+    }
+
+    /** Close the drawer and optionally continue only after its fade is gone.
+     *  The callback keeps idle mode from leaving the drawer visible while the
+     *  Home shelf is hidden underneath it. */
+    private void closeDrawer(Runnable afterClose) {
         AppDrawer d = drawer;
         // Leaving the drawer cancels any pending post-uninstall refocus / home
         // shrink so they can't apply to a later, unrelated reconcile.
@@ -1412,7 +1419,7 @@ public class LauncherActivity extends Activity {
         // framework race where a still-visible drawer can reclaim that focus.
         RecyclingShelfView s2 = shelf;
         if (s2 == null || destroyed) {
-            d.close(Float.NaN, null);
+            d.close(Float.NaN, afterClose);
             return;
         }
         final List<AppInfo> visibleSnapshot = new ArrayList<>(buildVisibleList());
@@ -1425,6 +1432,7 @@ public class LauncherActivity extends Activity {
                 if (destroyed) return;
                 View nb = netBtn;
                 if (nb != null) nb.requestFocus();
+                if (afterClose != null) afterClose.run();
             });
             pushHomeRow(s2, visibleSnapshot, hc);   // clears the shelf
             RingView rv = ringView; if (rv != null) rv.setVisibility(View.INVISIBLE);
@@ -1441,6 +1449,7 @@ public class LauncherActivity extends Activity {
             if (!destroyed && shelf == s2) {
                 s2.requestFocusOnIndex(homeIdx, true);
             }
+            if (afterClose != null) afterClose.run();
         });
         s2.focusedIndex = homeIdx;
         s2.snapNextFocus = true;   // calm, no focus-bounce on return
@@ -11115,11 +11124,39 @@ public class LauncherActivity extends Activity {
         scheduleIdleHide();
     }
 
+    /** Start idle mode only if the timer that requested it is still current.
+     *  The app grid is a full-screen surface, so fade it away first; otherwise
+     *  the old Home-only fade is invisible and idle mode appears broken. */
+    private void beginIdleHide(int generation) {
+        if (generation != idleHideGeneration || destroyed || uiPaused
+                || !slideshowActive() || idleHideSec <= 0
+                || anyOverlayLogicallyOpen()) {
+            return;
+        }
+        AppDrawer d = drawer;
+        if (d != null && d.getVisibility() == View.VISIBLE) {
+            if (d.closing) {
+                uiHandler.postDelayed(() -> beginIdleHide(generation), DRAWER_ANIM_MS);
+                return;
+            }
+            closeDrawer(() -> {
+                if (generation == idleHideGeneration && !destroyed && !uiPaused
+                        && slideshowActive() && idleHideSec > 0
+                        && !anyOverlayLogicallyOpen()) {
+                    applyIdleHide(true);
+                }
+            });
+            return;
+        }
+        applyIdleHide(true);
+    }
+
     /** (Re)arm the idle-hide timer. Safe to call on every key press —
      *  cancels any pending trigger and posts a fresh one if the feature
      *  is configured and the slideshow is active. No-op otherwise. */
     private void scheduleIdleHide() {
         uiHandler.removeCallbacks(idleHideTrigger);
+        idleHideGeneration++;
         if (idleHideSec > 0 && slideshowActive() && !uiPaused)
             uiHandler.postDelayed(idleHideTrigger, idleHideSec * 1000L);
     }
@@ -11128,6 +11165,7 @@ public class LauncherActivity extends Activity {
      *  (no animation — used by onPause / overlay open). */
     private void cancelAndRestoreIdleHide() {
         uiHandler.removeCallbacks(idleHideTrigger);
+        idleHideGeneration++;
         if (idleHideActive) applyIdleHide(false);
     }
 
