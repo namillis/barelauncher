@@ -21,31 +21,8 @@ public class NavigationMotionTest {
     }
 
     @Test
-    public void horizontalFocusStartsTowardPreviousCell() {
-        assertEquals(-10f, NavigationMotion.focusOffsetX(6, 6, 7, 6, 10f), 0.001f);
-        assertEquals(10f, NavigationMotion.focusOffsetX(6, 7, 6, 6, 10f), 0.001f);
-        assertEquals(0f, NavigationMotion.focusOffsetY(6, 6, 7, 6, 10f), 0.001f);
-    }
-
-    @Test
-    public void verticalFocusStartsTowardPreviousRow() {
-        assertEquals(-10f, NavigationMotion.focusOffsetY(6, 6, 12, 6, 10f), 0.001f);
-        assertEquals(10f, NavigationMotion.focusOffsetY(6, 12, 6, 6, 10f), 0.001f);
-        assertEquals(0f, NavigationMotion.focusOffsetX(6, 6, 12, 6, 10f), 0.001f);
-    }
-
-    @Test
-    public void sameCellAndHeldNavigationHaveNoLeadIn() {
-        assertEquals(0f, NavigationMotion.focusOffsetX(5, 7, 7, 5, 10f), 0.001f);
-        assertEquals(0f, NavigationMotion.focusOffsetY(5, 7, 7, 5, 10f), 0.001f);
-        assertEquals(0f, NavigationMotion.focusOffsetX(5, 7, 8, 5, 0f), 0.001f);
-        assertEquals(0f, NavigationMotion.focusOffsetY(5, 7, 12, 5, 0f), 0.001f);
-    }
-
-    @Test
     public void motionDurationsStayBelowPerceivedLagThreshold() {
         assertEquals(220, NavigationMotion.SURFACE_DURATION_MS);
-        assertEquals(110, NavigationMotion.GRID_FOCUS_DURATION_MS);
-        assertEquals(10, NavigationMotion.GRID_FOCUS_GLIDE_DP);
+        assertEquals(120, NavigationMotion.GRID_FOCUS_DURATION_MS);
     }
 }

@@ -25,6 +25,7 @@ import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputConnection;
 import android.widget.EditText;
 import android.widget.FrameLayout;
+import android.widget.ImageView;
 
 import androidx.test.core.app.ActivityScenario;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
@@ -337,6 +338,51 @@ public class LauncherCustomizationTest {
     }
 
     @Test
+    public void drawerBlurCrossfade_reachesBlurredAndSharpEndStates() {
+        try (ActivityScenario<LauncherActivity> scenario =
+                     launchSettledLauncher()) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                awaitValue(scenario, "loaded wallpaper drawable", activity -> {
+                    ImageView wallpaper = (ImageView) field(activity, "wallpaperFront");
+                    return wallpaper.getDrawable() != null ? wallpaper : null;
+                });
+            }
+
+            scenario.onActivity(activity -> {
+                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+                    Bitmap preview = Bitmap.createBitmap(160, 90, Bitmap.Config.ARGB_8888);
+                    preview.eraseColor(0xFF315A82);
+                    setField(activity, "legacyGridBlurBitmap", preview);
+                }
+                View layer = (View) field(activity, "drawerBlurLayer");
+                invoke(activity, "applyDrawerBlur",
+                        new Class<?>[] {boolean.class}, true);
+                assertEquals(View.VISIBLE, layer.getVisibility());
+                assertEquals(0f, layer.getAlpha(), 0.01f);
+                assertEquals(NavigationMotion.SURFACE_DURATION_MS,
+                        layer.animate().getDuration());
+            });
+
+            awaitValue(scenario, "blurred wallpaper end state", activity -> {
+                ImageView layer = (ImageView) field(activity, "drawerBlurLayer");
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    return layer.getVisibility() == View.GONE ? layer : null;
+                }
+                return layer.getVisibility() == View.VISIBLE
+                        && Math.abs(layer.getAlpha() - 1f) < 0.01f ? layer : null;
+            });
+
+            scenario.onActivity(activity -> invoke(activity, "applyDrawerBlur",
+                    new Class<?>[] {boolean.class}, false));
+            awaitValue(scenario, "sharp wallpaper end state", activity -> {
+                ImageView layer = (ImageView) field(activity, "drawerBlurLayer");
+                return layer.getVisibility() == View.GONE
+                        && Math.abs(layer.getAlpha()) < 0.01f ? layer : null;
+            });
+        }
+    }
+
+    @Test
     public void favoritesGlass_matchesHomeAndGridAcrossBlurPaths() {
         try (ActivityScenario<LauncherActivity> scenario =
                      launchSettledLauncher()) {
@@ -481,7 +527,7 @@ public class LauncherCustomizationTest {
     }
 
     @Test
-    public void gridFocusGlidesTowardAdjacentAppAndHeldNavigationSnaps() {
+    public void gridFocusStaysAnchoredForSingleStepAndHeldNavigation() {
         try (ActivityScenario<LauncherActivity> scenario =
                      launchSettledLauncher()) {
             focusHomeCell(scenario);
@@ -493,7 +539,7 @@ public class LauncherCustomizationTest {
                             && Math.abs(drawer.getAlpha() - 1f) < 0.01f
                             ? drawer : null);
 
-            AtomicReference<View> glidingCell = new AtomicReference<>();
+            AtomicReference<View> focusedCell = new AtomicReference<>();
             scenario.onActivity(activity -> {
                 int previous = (Integer) field(drawer, "focusedIndex");
                 @SuppressWarnings("unchecked")
@@ -510,19 +556,18 @@ public class LauncherCustomizationTest {
                 View focused = activity.getWindow().getDecorView().findFocus();
                 assertNotNull(focused);
                 assertEquals(target, ((Integer) field(focused, "boundIndex")).intValue());
-                float distance = NavigationMotion.GRID_FOCUS_GLIDE_DP
-                        * activity.getResources().getDisplayMetrics().density;
-                assertEquals("rightward focus enters from the left",
-                        -distance, focused.getTranslationX(), 1f);
-                assertEquals(0f, focused.getTranslationY(), 0.1f);
-                glidingCell.set(focused);
+                assertEquals("single-step focus must not move the card",
+                        0f, focused.getTranslationX(), 0.1f);
+                assertEquals("single-step focus must not move the card",
+                        0f, focused.getTranslationY(), 0.1f);
+                focusedCell.set(focused);
             });
 
-            View settledCell = awaitValue(scenario, "settled directional focus glide",
-                    activity -> Math.abs(glidingCell.get().getTranslationX()) < 0.1f
-                            && Math.abs(glidingCell.get().getTranslationY()) < 0.1f
-                            && Math.abs(glidingCell.get().getScaleX() - 1.10f) < 0.01f
-                            ? glidingCell.get() : null);
+            View settledCell = awaitValue(scenario, "settled anchored focus scale",
+                    activity -> Math.abs(focusedCell.get().getTranslationX()) < 0.1f
+                            && Math.abs(focusedCell.get().getTranslationY()) < 0.1f
+                            && Math.abs(focusedCell.get().getScaleX() - 1.10f) < 0.01f
+                            ? focusedCell.get() : null);
 
             scenario.onActivity(activity -> {
                 int previous = (Integer) field(settledCell, "boundIndex");

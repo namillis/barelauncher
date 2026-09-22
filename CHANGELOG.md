@@ -12,9 +12,12 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 - **Moving between the favorites bar and app grid now follows one continuous
   path.** The selected grid surface glides from the favorites position over a
   short 220 ms eased transition and reverses the same path when returning home.
-- **Single-step grid navigation settles in the D-pad direction.** A newly
-  focused card travels the final 10 dp over 110 ms while keeping its existing
-  scale, shadow, and optional border; held navigation still snaps immediately.
+- **Wallpaper blur now fades with the grid transition.** Older TVs fade the
+  cached low-resolution blur preview; Android 12+ briefly crossfades a
+  GPU-blurred wallpaper copy, then returns to the existing single-layer render.
+- **Grid cards stay fixed while focus changes.** Selection eases only scale and
+  shadow on the card's layout position, removing the directional translation
+  that made icons appear to shake. Held navigation still snaps immediately.
 
 ## [2.5.2] — 2026-09-22
 

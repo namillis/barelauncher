@@ -198,8 +198,8 @@ public class LauncherActivity extends Activity {
     // grid position, rather than fading across a fixed six-percent nudge.
     // Keep the duration short enough for remote input to feel immediate.
     private static final int    DRAWER_ANIM_MS = NavigationMotion.SURFACE_DURATION_MS;
-    // Single-step grid focus gets a small directional lead-in. Held D-pad
-    // repeats still snap so motion never queues behind the user's input.
+    // Grid cards stay anchored in their layout slots. Only scale and shadow
+    // ease to the focused state; held D-pad repeats still snap immediately.
     private static final int    GRID_FOCUS_DUR_MS = NavigationMotion.GRID_FOCUS_DURATION_MS;
     // PixelCopy is optional polish. If a legacy compositor never reaches the
     // requested frame or callback, open the drawer without blur rather than
@@ -307,11 +307,15 @@ public class LauncherActivity extends Activity {
     private android.net.ConnectivityManager connMgr = null;
     private android.net.ConnectivityManager.NetworkCallback netCallback = null;
     private FavoritesBlurView   favoritesBlurLayer;
-    private ImageView           legacyGridBlurLayer;
+    /** Temporary full-screen blur overlay. Legacy TVs keep the cached bitmap
+     *  here while the drawer is open; modern TVs use it only during the
+     *  sharp↔blur crossfade, then return to direct RenderEffect rendering. */
+    private ImageView           drawerBlurLayer;
     private Bitmap              legacyGridBlurBitmap;
     private boolean             legacyGridBlurDirty = true;
     private boolean             legacyGridBlurCapturePending = false;
     private int                 legacyGridBlurCaptureGeneration = 0;
+    private int                 drawerBlurTransitionGeneration = 0;
     private RingView           ringView;
     private FrameLayout        root;
     private Toast              currentToast;
@@ -1505,28 +1509,127 @@ public class LauncherActivity extends Activity {
         View mb = mapperBtnView;      if (mb != null) { mb.animate().cancel(); mb.setAlpha(0.6f); }
     }
 
-    /** Apply the grid wallpaper effect. Android 12+ uses RenderEffect. Older
-     *  TVs show a cached downsampled/box-blurred PixelCopy behind the grid. */
+    /** Duplicate only drawable state; Bitmap pixels remain shared in GPU memory. */
+    private Drawable drawerBlurDrawable() {
+        Drawable source = wallpaperFront != null ? wallpaperFront.getDrawable() : null;
+        Drawable.ConstantState state = source != null ? source.getConstantState() : null;
+        return state != null ? state.newDrawable(getResources()) : null;
+    }
+
+    /** Apply the grid wallpaper effect, crossfading only cached/rendered pixels. */
     private void applyDrawerBlur(boolean on) {
+        applyDrawerBlur(on, true);
+    }
+
+    /**
+     * @param animate false for lifecycle restoration where no transition can
+     *                be observed (pause/resume/force-hide).
+     */
+    private void applyDrawerBlur(boolean on, boolean animate) {
+        ImageView layer = drawerBlurLayer;
+        if (layer == null) return;
+        final int generation = ++drawerBlurTransitionGeneration;
+        layer.animate().cancel();
+        layer.animate().setUpdateListener(null);
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            RenderEffect fx = null;
-            if (on) {
-                float r = dp(24);
-                fx = RenderEffect.createBlurEffect(r, r, Shader.TileMode.CLAMP);
+            if (!animate) {
+                setWallpaperRenderBlur(on);
+                layer.setVisibility(View.GONE);
+                layer.setAlpha(0f);
+                layer.setImageDrawable(null);
+                return;
             }
-            if (wallpaperFront != null) wallpaperFront.setRenderEffect(fx);
-            if (wallpaperBack  != null) wallpaperBack.setRenderEffect(fx);
+
+            if (on) {
+                setWallpaperRenderBlur(false);
+                Drawable source = drawerBlurDrawable();
+                if (source == null) {
+                    setWallpaperRenderBlur(true);
+                    return;
+                }
+                // The drawable (usually one HARDWARE Bitmap) is shared, not
+                // copied. The extra full-screen draw exists for 220 ms only.
+                layer.setImageDrawable(source);
+                layer.setAlpha(0f);
+                layer.setVisibility(View.VISIBLE);
+                layer.animate().alpha(1f)
+                        .setDuration(DRAWER_ANIM_MS).setInterpolator(SCROLL_EASE)
+                        .withEndAction(() -> {
+                            if (generation != drawerBlurTransitionGeneration
+                                    || destroyed) return;
+                            // Return to the original one-layer steady state.
+                            setWallpaperRenderBlur(true);
+                            layer.setVisibility(View.GONE);
+                            layer.setAlpha(0f);
+                            layer.setImageDrawable(null);
+                        }).start();
+            } else {
+                if (layer.getVisibility() != View.VISIBLE) {
+                    Drawable source = drawerBlurDrawable();
+                    if (source == null) {
+                        setWallpaperRenderBlur(false);
+                        return;
+                    }
+                    layer.setImageDrawable(source);
+                    layer.setAlpha(1f);
+                    layer.setVisibility(View.VISIBLE);
+                }
+                // Reveal the already-sharp wallpaper underneath the temporary
+                // blurred copy. No blur radius is recalculated per frame.
+                setWallpaperRenderBlur(false);
+                layer.animate().alpha(0f)
+                        .setDuration(DRAWER_ANIM_MS).setInterpolator(SCROLL_EASE)
+                        .withEndAction(() -> {
+                            if (generation != drawerBlurTransitionGeneration
+                                    || destroyed) return;
+                            layer.setVisibility(View.GONE);
+                            layer.setAlpha(0f);
+                            layer.setImageDrawable(null);
+                        }).start();
+            }
             return;
         }
 
-        ImageView legacy = legacyGridBlurLayer;
-        if (legacy == null) return;
         if (on && legacyGridBlurBitmap != null) {
-            legacy.setImageBitmap(legacyGridBlurBitmap);
-            legacy.setVisibility(View.VISIBLE);
+            layer.setImageBitmap(legacyGridBlurBitmap);
+            layer.setVisibility(View.VISIBLE);
+            if (animate) {
+                layer.setAlpha(0f);
+                layer.animate().alpha(1f)
+                        .setDuration(DRAWER_ANIM_MS).setInterpolator(SCROLL_EASE)
+                        .start();
+            } else {
+                layer.setAlpha(1f);
+            }
         } else if (!on) {
-            legacy.setVisibility(View.GONE);
+            if (!animate || layer.getVisibility() != View.VISIBLE) {
+                layer.setVisibility(View.GONE);
+                layer.setAlpha(0f);
+                layer.setImageDrawable(null);
+                return;
+            }
+            layer.animate().alpha(0f)
+                    .setDuration(DRAWER_ANIM_MS).setInterpolator(SCROLL_EASE)
+                    .withEndAction(() -> {
+                        if (generation != drawerBlurTransitionGeneration
+                                || destroyed) return;
+                        layer.setVisibility(View.GONE);
+                        layer.setImageDrawable(null);
+                    }).start();
         }
+    }
+
+    private void setWallpaperRenderBlur(boolean on) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return;
+        RenderEffect effect = null;
+        if (on) {
+            float radius = dp(24);
+            effect = RenderEffect.createBlurEffect(
+                    radius, radius, Shader.TileMode.CLAMP);
+        }
+        if (wallpaperFront != null) wallpaperFront.setRenderEffect(effect);
+        if (wallpaperBack != null) wallpaperBack.setRenderEffect(effect);
     }
 
     /** Capture wallpaper-only content after home chrome has been hidden, blur
@@ -1547,7 +1650,7 @@ public class LauncherActivity extends Activity {
             return;
         }
 
-        final ImageView layer = legacyGridBlurLayer;
+        final ImageView layer = drawerBlurLayer;
         final FrameLayout content = root;
         if (layer == null || content == null || screenW <= 0 || screenH <= 0) {
             after.run();
@@ -1893,7 +1996,7 @@ public class LauncherActivity extends Activity {
                 d2.animate().cancel();
                 d2.setAlpha(1f);
                 d2.setTranslationY(0f);
-                applyDrawerBlur(true);
+                applyDrawerBlur(true, false);
                 setHomeChromeVisible(false);
                 RecyclingShelfView sh = shelf;
                 if (sh != null) sh.setVisibility(View.INVISIBLE);
@@ -2103,12 +2206,15 @@ public class LauncherActivity extends Activity {
         // clears the ImageView drawables. Keeps the activity from having
         // to know about wallpaper memory hygiene at all.
         if (wallpaperCtl != null) { wallpaperCtl.releaseBitmaps(); wallpaperCtl = null; }
-        if (legacyGridBlurLayer != null) legacyGridBlurLayer.setImageDrawable(null);
+        if (drawerBlurLayer != null) {
+            drawerBlurLayer.animate().cancel();
+            drawerBlurLayer.setImageDrawable(null);
+        }
         if (legacyGridBlurBitmap != null && !legacyGridBlurBitmap.isRecycled()) {
             legacyGridBlurBitmap.recycle();
         }
         legacyGridBlurBitmap = null;
-        legacyGridBlurLayer = null;
+        drawerBlurLayer = null;
         legacyGridBlurCapturePending = false;
         wallpaperFront = null; wallpaperBack = null; clockView = null; shelf = null;
         drawer = null;
@@ -2378,15 +2484,19 @@ public class LauncherActivity extends Activity {
         // snapshot pre-painted) — no second decode, no flicker.
         wallpaperCtl.loadSnapshotSync();
 
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
-            legacyGridBlurLayer = new ImageView(this);
-            legacyGridBlurLayer.setScaleType(ImageView.ScaleType.FIT_XY);
-            legacyGridBlurLayer.setVisibility(View.GONE);
-            legacyGridBlurLayer.setImportantForAccessibility(
-                    View.IMPORTANT_FOR_ACCESSIBILITY_NO);
-            root.addView(legacyGridBlurLayer,
-                    new FrameLayout.LayoutParams(MATCH, MATCH));
+        drawerBlurLayer = new ImageView(this);
+        drawerBlurLayer.setScaleType(Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+                ? ImageView.ScaleType.CENTER_CROP : ImageView.ScaleType.FIT_XY);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            float radius = dp(24);
+            drawerBlurLayer.setRenderEffect(RenderEffect.createBlurEffect(
+                    radius, radius, Shader.TileMode.CLAMP));
         }
+        drawerBlurLayer.setAlpha(0f);
+        drawerBlurLayer.setVisibility(View.GONE);
+        drawerBlurLayer.setImportantForAccessibility(
+                View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        root.addView(drawerBlurLayer, new FrameLayout.LayoutParams(MATCH, MATCH));
 
         final int favoritesMarginH = dp(32);
         final int favoritesBottom = dp(18);
@@ -5408,29 +5518,11 @@ public class LauncherActivity extends Activity {
             else      smoothScrollTo(target);
         }
 
-        private void prepareFocusGlide(DrawerCell cell, int fromIndex,
-                                       int toIndex, boolean snap) {
-            if (cell == null) return;
-            cell.animate().cancel();
-            cell.animate().setUpdateListener(null);
-            if (snap || fromIndex == toIndex) {
-                cell.setTranslationX(0f);
-                cell.setTranslationY(0f);
-                return;
-            }
-            float distance = dp(NavigationMotion.GRID_FOCUS_GLIDE_DP);
-            cell.setTranslationX(NavigationMotion.focusOffsetX(
-                    layoutColumns, fromIndex, toIndex, hc(), distance));
-            cell.setTranslationY(NavigationMotion.focusOffsetY(
-                    layoutColumns, fromIndex, toIndex, hc(), distance));
-        }
-
         void requestFocusOnIndex(int idx) { requestFocusOnIndex(idx, false); }
         void requestFocusOnIndex(int idx, boolean snap) {
             if (displayed.isEmpty()) return;
             if (idx < 0) idx = 0;
             if (idx >= displayed.size()) idx = displayed.size() - 1;
-            final int previousIndex = focusedIndex;
             focusedIndex = idx;
             scroller.abortAnimation();
             boolean prevFast = fastNav;
@@ -5440,7 +5532,6 @@ public class LauncherActivity extends Activity {
                 fillVisible();
                 DrawerCell cv = attached.get(idx);
                 if (cv != null) {
-                    prepareFocusGlide(cv, previousIndex, idx, snap);
                     cv.requestFocus();
                 } else {
                     final int target = idx;
@@ -5452,8 +5543,6 @@ public class LauncherActivity extends Activity {
                             boolean p = fastNav;
                             fastNav = deferredFast;
                             try {
-                                prepareFocusGlide(cv2, previousIndex, target,
-                                        deferredFast);
                                 cv2.requestFocus();
                             } finally {
                                 fastNav = p;
@@ -5582,7 +5671,7 @@ public class LauncherActivity extends Activity {
             setLayerType(LAYER_TYPE_NONE, null);
             setVisibility(GONE);
             setTranslationY(0f); setAlpha(1f);
-            LauncherActivity.this.applyDrawerBlur(false);
+            LauncherActivity.this.applyDrawerBlur(false, false);
             LauncherActivity.this.setHomeChromeVisible(true);
             RingView rv = ringView;
             if (rv != null) rv.setVisibility(View.INVISIBLE);
@@ -5847,14 +5936,12 @@ public class LauncherActivity extends Activity {
                             }
                         } else if (f) {
                             animate().scaleX(FOCUS_SCALE).scaleY(FOCUS_SCALE)
-                                     .translationX(0f).translationY(0f)
                                      .translationZ(focusShadowZ)
                                      .setDuration(GRID_FOCUS_DUR_MS)
-                                     .setInterpolator(SCROLL_EASE)
+                                     .setInterpolator(FOCUS_EASE)
                                      .setUpdateListener(focusUpdateListener).start();
                         } else {
                             animate().scaleX(1f).scaleY(1f)
-                                     .translationX(0f).translationY(0f)
                                      .translationZ(0f)
                                      .setDuration(UNFOCUS_DUR_MS).setInterpolator(FOCUS_EASE)
                                      .setUpdateListener(null).start();
