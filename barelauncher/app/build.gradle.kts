@@ -490,8 +490,11 @@ android {
         // Bumped 48 → 49: 2.5.3 eases the home-to-grid surface and
         // wallpaper-blur transitions, with anchored grid focus scaling.
         // SemVer PATCH — user-visible navigation motion refinement.
-        versionCode   = 49
-        versionName   = "2.5.3"
+        // Bumped 49 → 50: 2.5.4 hides the entire Liquid Edge favorites
+        // surface while idle, leaving wallpaper and top controls visible.
+        // SemVer PATCH — idle-mode presentation correction.
+        versionCode   = 50
+        versionName   = "2.5.4"
         resourceConfigurations += listOf("en")
 
         // Instrumentation test runner. Required so :app:connectedDebugAndroidTest

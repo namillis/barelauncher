@@ -449,6 +449,70 @@ public class LauncherCustomizationTest {
     }
 
     @Test
+    public void idleHide_hidesEntireFavoritesSurfaceAndKeepsClockVisible() {
+        try (ActivityScenario<LauncherActivity> scenario =
+                     launchSettledLauncher()) {
+            awaitVisibleViewField(scenario, "favoritesBlurLayer");
+            scenario.onActivity(activity -> {
+                View clock = (View) field(activity, "clockView");
+                clock.setVisibility(View.VISIBLE);
+                clock.setAlpha(1f);
+                invoke(activity, "applyIdleHide",
+                        new Class<?>[] {boolean.class}, true);
+            });
+
+            awaitValue(scenario, "hidden favorites shelf and blur layer", activity -> {
+                View shelf = (View) field(activity, "shelf");
+                View blur = (View) field(activity, "favoritesBlurLayer");
+                View clock = (View) field(activity, "clockView");
+                return Math.abs(shelf.getAlpha()) < 0.01f
+                        && Math.abs(blur.getAlpha()) < 0.01f
+                        && clock.getVisibility() == View.VISIBLE
+                        && Math.abs(clock.getAlpha() - 1f) < 0.01f
+                        ? blur : null;
+            });
+
+            scenario.onActivity(activity -> invoke(activity, "applyIdleHide",
+                    new Class<?>[] {boolean.class}, false));
+            awaitValue(scenario, "restored favorites shelf and blur layer", activity -> {
+                View shelf = (View) field(activity, "shelf");
+                View blur = (View) field(activity, "favoritesBlurLayer");
+                return Math.abs(shelf.getAlpha() - 1f) < 0.01f
+                        && Math.abs(blur.getAlpha() - 1f) < 0.01f
+                        ? blur : null;
+            });
+        }
+    }
+
+    @Test
+    public void idleHide_closesAppGridForStaticWallpaper() {
+        try (ActivityScenario<LauncherActivity> scenario =
+                     launchSettledLauncher()) {
+            focusHomeCell(scenario);
+            scenario.onActivity(activity -> invoke(activity, "openDrawer"));
+            View drawer = awaitVisibleViewField(scenario, "drawer");
+
+            scenario.onActivity(activity -> {
+                setField(activity, "idleHideSec", 60);
+                setField(activity, "idleHideGeneration", 1);
+                invoke(activity, "beginIdleHide", new Class<?>[] {int.class}, 1);
+            });
+
+            awaitValue(scenario, "hidden home surface after drawer closes", activity -> {
+                View shelf = (View) field(activity, "shelf");
+                View blur = (View) field(activity, "favoritesBlurLayer");
+                return drawer.getVisibility() == View.GONE
+                        && Math.abs(shelf.getAlpha()) < 0.01f
+                        && Math.abs(blur.getAlpha()) < 0.01f
+                        ? blur : null;
+            });
+
+            scenario.onActivity(activity -> invoke(activity, "applyIdleHide",
+                    new Class<?>[] {boolean.class}, false));
+        }
+    }
+
+    @Test
     public void drawerOpen_continuesWhenLegacyBlurFrameNeverArrives() {
         try (ActivityScenario<LauncherActivity> scenario =
                      launchSettledLauncher()) {

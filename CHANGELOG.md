@@ -7,6 +7,16 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+## [2.5.4] — 2026-09-22
+
+### Fixed
+
+- **Idle slideshow mode now hides the entire favorites surface.** The Liquid
+  Edge wallpaper-blur layer fades with the app shelf, leaving only the
+  wallpaper and clock/date visible until the next remote input.
+
+## [2.5.3] — 2026-09-22
+
 ### Changed
 
 - **Moving between the favorites bar and app grid now follows one continuous
