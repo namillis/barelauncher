@@ -13,13 +13,15 @@ final class LayoutOptions {
 
     static final boolean DEFAULT_FOCUS_BORDER_ENABLED = false;
     static final int DEFAULT_FOCUS_COLOR = 0xFFFFFFFF;
+    private static final int FOCUS_COLOR_ORANGE = 0xFFFF9800;
+    private static final int LEGACY_FOCUS_COLOR_ORANGE = 0xFFFF3D00;
     private static final int[] FOCUS_COLORS = {
             0xFFFFFFFF,
             0xFF00E5FF,
             0xFFFFD600,
             0xFF76FF03,
             0xFFFF4081,
-            0xFFFF3D00,
+            FOCUS_COLOR_ORANGE,
             0xFF2979FF,
             0xFFE040FB
     };
@@ -52,7 +54,8 @@ final class LayoutOptions {
     }
 
     static int sanitizeFocusColor(int color) {
-        return 0xFF000000 | (color & 0x00FFFFFF);
+        int opaque = 0xFF000000 | (color & 0x00FFFFFF);
+        return opaque == LEGACY_FOCUS_COLOR_ORANGE ? FOCUS_COLOR_ORANGE : opaque;
     }
 
     private static int focusColorIndex(int color) {

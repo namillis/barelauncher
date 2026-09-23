@@ -176,6 +176,87 @@ public class LauncherCustomizationTest {
     }
 
     @Test
+    public void settingsCategoryHub_groupsExistingActionsAndTitlesPages() {
+        try (ActivityScenario<LauncherActivity> scenario = launchSettledLauncher()) {
+            scenario.onActivity(activity -> {
+                invoke(activity, "showSettingsPanel");
+                assertSettingsPage(activity, R.string.settings_title_main,
+                        R.string.settings_row_appearance_menu,
+                        R.string.settings_row_wallpaper_menu,
+                        R.string.settings_row_apps_menu,
+                        R.string.settings_row_device_menu,
+                        R.string.settings_row_system_settings);
+                assertEquals(activity.getString(R.string.settings_hint_open),
+                        ((android.widget.TextView) field(activity, "settingsHintView"))
+                                .getText().toString());
+
+                invoke(activity, "activateSettingsRowId", new Class<?>[] {int.class},
+                        staticField(LauncherActivity.class, "SR_APPS_MENU"));
+                assertSettingsPage(activity, R.string.settings_title_apps,
+                        R.string.settings_row_manage_hidden,
+                        R.string.settings_row_button_shortcuts);
+                invoke(activity, "handleSettingsKey", new Class<?>[] {int.class},
+                        KeyEvent.KEYCODE_BACK);
+                assertSettingsPage(activity, R.string.settings_title_main,
+                        R.string.settings_row_appearance_menu,
+                        R.string.settings_row_wallpaper_menu,
+                        R.string.settings_row_apps_menu,
+                        R.string.settings_row_device_menu,
+                        R.string.settings_row_system_settings);
+                assertEquals(2, ((Integer) field(activity, "settingsSelectedRow")).intValue());
+
+                invoke(activity, "activateSettingsRowId", new Class<?>[] {int.class},
+                        staticField(LauncherActivity.class, "SR_DEVICE_MENU"));
+                assertSettingsPage(activity, R.string.settings_title_device,
+                        R.string.settings_row_launcher_setup_menu,
+                        R.string.settings_row_backup_menu);
+                invoke(activity, "activateSettingsRowId", new Class<?>[] {int.class},
+                        staticField(LauncherActivity.class, "SR_LAUNCHER_SETUP_MENU"));
+                assertSettingsPage(activity, R.string.settings_title_launcher_setup,
+                        R.string.settings_row_launcher_activate,
+                        R.string.settings_row_launcher_restore);
+                invoke(activity, "handleSettingsKey", new Class<?>[] {int.class},
+                        KeyEvent.KEYCODE_BACK);
+                assertSettingsPage(activity, R.string.settings_title_device,
+                        R.string.settings_row_launcher_setup_menu,
+                        R.string.settings_row_backup_menu);
+                invoke(activity, "handleSettingsKey", new Class<?>[] {int.class},
+                        KeyEvent.KEYCODE_BACK);
+                assertEquals(3, ((Integer) field(activity, "settingsSelectedRow")).intValue());
+            });
+        }
+    }
+
+    private static void assertSettingsPage(
+            LauncherActivity activity, int titleRes, int... rowLabelResources) {
+        android.widget.TextView title = (android.widget.TextView)
+                field(activity, "settingsTitleView");
+        android.widget.LinearLayout column = (android.widget.LinearLayout)
+                field(activity, "settingsColumn");
+        assertEquals(activity.getString(titleRes), title.getText().toString());
+        assertEquals(rowLabelResources.length, column.getChildCount());
+        for (int i = 0; i < rowLabelResources.length; i++) {
+            ViewGroup row = (ViewGroup) column.getChildAt(i);
+            android.widget.TextView label = (android.widget.TextView) row.getChildAt(0);
+            String text = label.getText().toString();
+            assertEquals(activity.getString(rowLabelResources[i]), text.split("\\n", 2)[0]);
+            android.widget.LinearLayout.LayoutParams labelParams =
+                    (android.widget.LinearLayout.LayoutParams) label.getLayoutParams();
+            assertEquals(0, labelParams.width);
+            assertEquals(1f, labelParams.weight, 0f);
+            int expectedMargin = row.getChildCount() > 1
+                    ? Math.round(10 * activity.getResources().getDisplayMetrics().density) : 0;
+            assertEquals(expectedMargin, labelParams.getMarginEnd());
+            assertEquals(Math.round(250 * activity.getResources()
+                    .getDisplayMetrics().density), row.getMinimumWidth());
+            if (row.getChildCount() > 1) {
+                assertEquals(android.view.Gravity.END,
+                        ((android.widget.TextView) row.getChildAt(1)).getGravity());
+            }
+        }
+    }
+
+    @Test
     public void layoutSettings_exposesColumnsRoundnessAndFocusControls() {
         Context context = getInstrumentation().getTargetContext();
         String prefsName = (String) staticField(LauncherActivity.class, "PREFS");
@@ -208,11 +289,11 @@ public class LauncherCustomizationTest {
 
             scenario.onActivity(activity -> invoke(activity, "activateSettingsRowId",
                     new Class<?>[] {int.class},
-                    staticField(LauncherActivity.class, "SR_LAYOUT_MENU")));
-            awaitValue(scenario, "Layout settings rows", activity -> {
+                    staticField(LauncherActivity.class, "SR_APPEARANCE_MENU")));
+            awaitValue(scenario, "Appearance settings rows", activity -> {
                 android.widget.LinearLayout column = (android.widget.LinearLayout)
                         field(activity, "settingsColumn");
-                return column != null && column.getChildCount() == 4 ? column : null;
+                return column != null && column.getChildCount() == 5 ? column : null;
             });
 
             scenario.onActivity(activity -> {
@@ -225,7 +306,7 @@ public class LauncherCustomizationTest {
                     scenario, "updated Layout settings", activity -> {
                         android.widget.LinearLayout current = (android.widget.LinearLayout)
                                 field(activity, "settingsColumn");
-                        if (current == null || current.getChildCount() != 4) return null;
+                        if (current == null || current.getChildCount() != 5) return null;
                         String columnsText = ((android.widget.TextView)
                                 ((ViewGroup) current.getChildAt(0)).getChildAt(1))
                                 .getText().toString();
@@ -242,7 +323,13 @@ public class LauncherCustomizationTest {
 
             scenario.onActivity(activity -> {
                 assertSame(column, field(activity, "settingsColumn"));
-                assertEquals(4, column.getChildCount());
+                assertEquals(activity.getString(R.string.settings_title_appearance),
+                        ((android.widget.TextView) field(activity, "settingsTitleView"))
+                                .getText().toString());
+                assertEquals(activity.getString(R.string.settings_hint_adjust),
+                        ((android.widget.TextView) field(activity, "settingsHintView"))
+                                .getText().toString());
+                assertEquals(5, column.getChildCount());
                 assertEquals(activity.getString(R.string.settings_row_layout_columns),
                         ((android.widget.TextView) ((ViewGroup) column.getChildAt(0))
                                 .getChildAt(0)).getText().toString());
