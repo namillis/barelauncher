@@ -250,8 +250,11 @@ public class LauncherCustomizationTest {
             assertEquals(Math.round(250 * activity.getResources()
                     .getDisplayMetrics().density), row.getMinimumWidth());
             if (row.getChildCount() > 1) {
+                android.widget.TextView indicator =
+                        (android.widget.TextView) row.getChildAt(1);
                 assertEquals(android.view.Gravity.END,
-                        ((android.widget.TextView) row.getChildAt(1)).getGravity());
+                        indicator.getGravity()
+                                & android.view.Gravity.RELATIVE_HORIZONTAL_GRAVITY_MASK);
             }
         }
     }
