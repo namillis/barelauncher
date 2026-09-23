@@ -4,10 +4,7 @@
 
 # BareLauncher
 
-**The launcher your TV actually deserves — fast, minimal, out of your way.**
-
-A tiny, privacy-first home screen for Android TV, Google TV & Fire TV.
-No ads. No telemetry. No recommendations. Just your apps.
+**A small, local-first home screen for Android TV, Google TV, and Fire TV.**
 
 [![Latest release](https://img.shields.io/github/v/release/namillis/barelauncher?style=for-the-badge&color=22c55e&label=latest)](https://github.com/namillis/barelauncher/releases/latest)
 [![Download APK](https://img.shields.io/badge/Download-APK-09090b?style=for-the-badge&logo=android&logoColor=22c55e)](https://github.com/namillis/barelauncher/releases/latest/download/BareLauncher.apk)
@@ -16,140 +13,106 @@ No ads. No telemetry. No recommendations. Just your apps.
 
 </div>
 
----
+## Why BareLauncher
 
-Most TV launchers are heavy, online, and crowded with promotions. BareLauncher is the opposite: a quiet, instant home screen that stays out of your way and respects your hardware. The minified release APK stays small, and the normal home-screen path performs no background network work.
+Stock TV home screens mix app launching with content feeds and storefronts. BareLauncher focuses on one job: press Home, choose an app, and get out of the way.
 
-> **instant navigation · clean UI · low memory · zero distractions**
+The home screen shows your wallpaper, clock, and one row of favorite apps. Press Down for the complete app grid. Settings and customization stay out of sight until you need them. There are no ads, recommendations, accounts, or telemetry.
 
 ## Screenshots
 
-<sub><i>Click any image to open full size · scroll horizontally →</i></sub>
+<sub><i>Click an image to open it at full size.</i></sub>
 
 <div align="center">
 <table>
   <tr>
     <td align="center">
-      <a href="https://github.com/user-attachments/assets/48a3ac80-d467-47ba-b264-838db271ceaf" target="_blank" rel="noopener">
-        <img src="https://github.com/user-attachments/assets/48a3ac80-d467-47ba-b264-838db271ceaf" alt="BareLauncher home screen" width="460" loading="lazy" />
+      <a href="docs/screenshots/home.png">
+        <img src="docs/screenshots/home.png" alt="BareLauncher home screen with the favorites shelf" width="460" loading="lazy" />
       </a><br/><sub><b>Home</b></sub>
     </td>
     <td align="center">
-      <a href="https://github.com/user-attachments/assets/5b402ada-94e0-4d23-a890-0e3528ca3714" target="_blank" rel="noopener">
-        <img src="https://github.com/user-attachments/assets/5b402ada-94e0-4d23-a890-0e3528ca3714" alt="BareLauncher app drawer" width="460" loading="lazy" />
-      </a><br/><sub><b>App drawer</b></sub>
+      <a href="docs/screenshots/app-grid.png">
+        <img src="docs/screenshots/app-grid.png" alt="BareLauncher app grid" width="460" loading="lazy" />
+      </a><br/><sub><b>App grid</b></sub>
     </td>
+  </tr>
+  <tr>
     <td align="center">
-      <a href="https://github.com/user-attachments/assets/f07f346a-eb6f-462a-b168-5dbf6160c164" target="_blank" rel="noopener">
-        <img src="https://github.com/user-attachments/assets/f07f346a-eb6f-462a-b168-5dbf6160c164" alt="BareLauncher reorder and manage menu" width="460" loading="lazy" />
+      <a href="docs/screenshots/app-options.png">
+        <img src="docs/screenshots/app-options.png" alt="BareLauncher app options menu for reordering and managing an app" width="460" loading="lazy" />
       </a><br/><sub><b>Reorder &amp; manage</b></sub>
     </td>
     <td align="center">
-      <a href="https://github.com/user-attachments/assets/5a8b4e3a-493c-47e4-9495-c8320fe9d32f" target="_blank" rel="noopener">
-        <img src="https://github.com/user-attachments/assets/5a8b4e3a-493c-47e4-9495-c8320fe9d32f" alt="BareLauncher button remapper" width="460" loading="lazy" />
-      </a><br/><sub><b>Button shortcuts</b></sub>
+      <a href="docs/screenshots/settings-menu.png">
+        <img src="docs/screenshots/settings-menu.png" alt="BareLauncher settings menu" width="460" loading="lazy" />
+      </a><br/><sub><b>Settings</b></sub>
     </td>
   </tr>
 </table>
 </div>
 
----
+## What it does
 
-## Features
+- **Favorites and app grid:** Keep the apps you use most on the home screen and open the full grid with one press. Reorder or hide entries with the remote.
+- **App customization:** Long-press an app to rename it, choose custom artwork, move it, hide it, open App info, or uninstall it.
+- **Appearance controls:** Choose 4 to 7 icons per row, icon roundness, focus border and color, and whether the clock shows the date, time only, or nothing.
+- **Wallpapers and slideshows:** Use a single wallpaper or rotate through an image folder. Configure idle mode to hide the launcher UI and leave the wallpaper and clock visible.
+- **Remote and TV controls:** Add supported HDMI and other TV inputs to the grid. Assign the remote's color, menu, and subtitle buttons to apps.
+- **Backup and restore:** Export the launcher layout and settings to a file, then restore them after reinstalling or moving to another device.
+- **Persistent Google TV Home:** An optional one-time local ADB setup makes BareLauncher the Home app and includes a restore action for Google TV Home.
 
-| | |
-|---|---|
-| ⚡ **Instant navigation** | Zero-lag scrolling on a TV remote via a custom recycling shelf — no `RecyclerView`. |
-| 🗂️ **Home row + app drawer** | Favorites on the home screen, a pull-down drawer for the rest. Reorder everything freely with the D-pad. |
-| 🎛️ **Button shortcuts** | Assign remote colour/menu keys to any app directly from the home screen — no Accessibility Service required. |
-| 🏠 **Google TV Home setup** | One-time, on-device ADB setup makes BareLauncher the persistent Home app and includes a built-in restore action. |
-| 🗃️ **Manage apps** | Long-press any app or input to move, hide, rename, or choose custom artwork. Installed apps also expose App info and uninstall actions. |
-| 🎨 **Custom app &amp; input icons** | Pick a local PNG, JPEG, or WebP for apps and HDMI/input tiles, then reset to the original artwork at any time. Images stay private on the device. |
-| ✏️ **Local display names** | Rename apps and TV inputs inside BareLauncher without changing their Android package or system label. Reset restores the original name. |
-| 🖼️ **Wallpaper system** | Static wallpapers, folder-based slideshows, startup wallpaper rotation, and hardware bitmap rendering that saves 8–32 MB of RAM. |
-| 🎞️ **Wallpaper slideshows** | Turn any folder of photos or wallpapers into a rotating home screen background. Supports internal storage and USB/SD media with configurable intervals (20 sec–3 min). |
-| 🌙 **Hide UI when idle** | Automatically hides the launcher interface after inactivity, leaving only the clock so your wallpapers can fill the entire screen until the screensaver starts. |
-| 💾 **Backup & Restore** | Save and restore your launcher setup, including app order, local names, hidden apps, button shortcuts, and clock style. |
-| 📺 **TV input tiles** | Add HDMI, AV, and other supported TV inputs directly to the home screen, then rename them or give each source its own icon. |
-| 🕒 **3-state clock** | Full (time + day/date), time-only, or off. Locale-aware, 12/24-hour support with instant timezone updates. |
-| 📶 **Wi-Fi & settings pills** | Live Wi-Fi indicator plus a Settings pill — long-press it to open system settings instantly. |
-| ✨ **Smooth animations** | Lightweight app launch animations that make navigation feel smoother without sacrificing speed. |
-| ℹ️ **About screen** | Version info, project links, and GitHub/Ko-fi QR codes generated entirely on-device — no libraries, no network requests. |
-| 🚫 **Zero telemetry** | No analytics, no crash reporting, no background calls. Your usage stays on your device. |
-| 🚀 **Cold-start cache** | Wallpaper, shelf, and icons appear immediately after startup for a smooth, flash-free first frame. |
+## Privacy and size
 
----
+Normal launcher use makes no network requests. BareLauncher has no analytics, advertising, account system, or background update service. Custom names, artwork, shortcuts, and settings stay on the device.
 
-## Why it stays small
+The APK includes the `INTERNET` permission only for the explicit Google TV Home setup. That flow connects to the TV's own ADB daemon at `127.0.0.1:5555` and runs a fixed set of setup or restore commands. Photo access is requested only when you choose a slideshow folder.
 
-The launcher UI and every hot path remain pure Android SDK code:
-
-- Zero runtime AndroidX — no AppCompat, Material, RecyclerView, ConstraintLayout, or Lifecycle.
-- Fully programmatic UI — no XML layouts or inflated resource bloat.
-- Custom recycling shelf instead of `RecyclerView`.
-- R8 minification + resource shrinking on every release.
-- The only direct production dependency is `dadb`, loaded for the explicit Google TV setup/restore flow; it replaces a bundled native `adb` executable.
-- No native code and no `lib/` folder — the same APK runs on ARMv7, ARMv8, and x86_64.
-
----
+The UI uses the Android SDK directly, with programmatic layouts and custom recycling views. It has no runtime AndroidX dependency or native code. R8 minifies each release. The only direct production dependency is `dadb`, which is loaded for the local ADB setup and restore flow.
 
 ## Compatibility
 
-- **Android TV / Google TV** — all modern devices (Android 8.0 / API 26+)
-- **Fire TV Stick** — 4K, 4K Max, Lite
-- **Fire TV Cube** — all generations
-- **Mi Box / Mi Stick** and other Android TV boxes
+BareLauncher requires Android 8.0 (API 26) or newer. It is intended for:
 
----
+- Android TV and Google TV devices
+- Fire TV Stick and Fire TV Cube
+- Mi Box, Mi Stick, and other Android TV boxes
+
+TV input tiles depend on the device exposing inputs through Android's TV Input Framework. The built-in persistent Home setup is for Google TV devices with local ADB available on port 5555. Other devices use their system launcher-selection flow.
 
 ## Install
 
+BareLauncher is sideload-only. It is not published on the Google Play Store or Amazon Appstore.
+
 ### Downloader
 
-Open the **Downloader** app (by AFTVnews) and enter the code below. It always installs the **latest release** — no computer, no USB stick.
+Install the **Downloader** app by AFTVnews and enter code **9049616**. The code points to the latest BareLauncher release.
 
-<div align="center">
+### Direct APK
 
-<a href="http://aftv.news/9049616" target="_blank" rel="noopener">
-  <img src="https://img.shields.io/badge/AFTVnews%20Downloader-Code%209049616-FF6B2C?style=for-the-badge&logo=amazonfiretv&logoColor=white" alt="BareLauncher Downloader code 9049616 — always the latest release" height="44" />
-</a>
+1. Download [`BareLauncher.apk`](https://github.com/namillis/barelauncher/releases/latest/download/BareLauncher.apk) from the latest release.
+2. Move it to the TV with a USB drive, network share, or file-transfer app.
+3. Allow installation from unknown sources when Android asks.
+4. Open the APK and install it.
 
-</div>
+## Use BareLauncher as Home on Google TV
 
-### Or sideload the APK manually
+After Network debugging is enabled, BareLauncher configures the TV without a second device:
 
-1. Download **[`BareLauncher.apk`](https://github.com/namillis/barelauncher/releases/latest/download/BareLauncher.apk)** from the latest release.
-2. Move it to your TV — USB stick, network share, or an app like *LocalSend*.
-3. Allow installs from unknown sources when prompted.
-4. Open the APK and install.
+1. Enable **Developer options**, then enable **Network debugging**.
+2. Open **Settings → Default home & backup → Default home** in BareLauncher.
+3. Select **Use BareLauncher as Home**.
+4. Accept Android's one-time debugging authorization prompt.
 
-> Not on the Play Store or Amazon Appstore — sideload only.
+The setup selects BareLauncher as the system Home app and disables the Google TV launcher packages. The change survives normal restarts.
 
-**Make it your default launcher** — open BareLauncher Settings → **Google TV launcher setup** → **Use BareLauncher as Home**.
-
-1. Enable Network debugging in the TV's Developer options.
-2. Start setup and accept Android's one-time debugging authorization prompt.
-3. BareLauncher selects itself as Home and disables both Google TV launcher packages so the choice survives normal restarts.
-
-This also removes the Google TV quick-settings sidebar. Use **Restore Google TV Home** before uninstalling BareLauncher, or recover over ADB with:
+Disabling Google TV Home also removes its quick-settings sidebar. Before uninstalling BareLauncher, use **Restore Google TV Home** from the same screen. If BareLauncher has already been removed, reconnect with ADB and run:
 
 ```shell
 adb shell pm enable --user 0 com.google.android.apps.tv.launcherx
 adb shell pm enable --user 0 com.google.android.tungsten.setupwraith
 ```
 
----
-
-## Philosophy
-
-Every line has to justify its performance cost. No needless animations, no background junk, no overdesigned UI — just a launcher that feels **instant**.
-
----
-
 ## License
 
-**PolyForm Noncommercial License 1.0.0** — free for personal and non-commercial use. See [LICENSE](./LICENSE) and [NOTICE.md](./NOTICE.md).
-
-<div align="center">
-<sub>Made with care for people who just want their TV to work.</sub>
-</div>
+BareLauncher is available under the **PolyForm Noncommercial License 1.0.0** for personal and non-commercial use. See [LICENSE](./LICENSE) and [NOTICE.md](./NOTICE.md).
