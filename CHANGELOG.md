@@ -7,6 +7,14 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Added
+
+- **One-time Google TV Home setup.** From Settings, BareLauncher can connect
+  to the TV's local ADB daemon, select itself as the system Home app, and
+  disable both Google TV launcher packages so the remote Home button keeps
+  returning to BareLauncher after normal restarts. The same page includes a
+  restore action that re-enables Google TV Home.
+
 ## [2.5.4] — 2026-09-22
 
 ### Fixed

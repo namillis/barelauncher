@@ -73,8 +73,28 @@
     <string name="settings_row_show_clock">Show clock</string>
     <string name="settings_row_backup">Back up settings</string>
     <string name="settings_row_restore">Restore settings</string>
+    <string name="settings_row_launcher_setup_menu">Google TV launcher setup</string>
+    <string name="settings_row_launcher_activate">Use BareLauncher as Home</string>
+    <string name="settings_row_launcher_restore">Restore Google TV Home</string>
+    <string name="google_tv_status_active">Active</string>
+    <string name="google_tv_status_partial">Repair</string>
+    <string name="google_tv_status_not_set">Not set</string>
+    <string name="google_tv_status_working">Working</string>
     <string name="settings_row_system_settings">System Settings</string>
     <string name="settings_row_about">About</string>
+
+    <!-- Sideload-only Google TV setup. Commands run over the TV's own local
+         ADB daemon after the user accepts Android's authorization dialog. -->
+    <string name="google_tv_setup_title">Set up BareLauncher as Home</string>
+    <string name="google_tv_setup_message">First enable Network debugging in Developer options. Then continue and accept the one-time debugging authorization prompt.\n\nBareLauncher will become the system Home app and disable Google TV Home. This also removes the Google TV quick-settings sidebar. The change survives normal restarts.</string>
+    <string name="google_tv_setup_confirm">Set up</string>
+    <string name="google_tv_restore_title">Restore Google TV Home</string>
+    <string name="google_tv_restore_message">This re-enables the Google TV launcher and setup packages. You may be asked which Home app to use the next time you press Home.</string>
+    <string name="google_tv_restore_confirm">Restore</string>
+    <string name="google_tv_setup_connecting">Connecting to local ADB… Accept the debugging prompt if it appears.</string>
+    <string name="google_tv_setup_success_title">Launcher setup complete</string>
+    <string name="google_tv_restore_success_title">Google TV Home restored</string>
+    <string name="google_tv_setup_failed_title">Launcher setup incomplete</string>
 
     <!-- About card (v1.4.9). Version is filled in at runtime from the
          installed package, so it always matches the actual app version. -->

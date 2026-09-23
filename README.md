@@ -18,7 +18,7 @@ No ads. No telemetry. No recommendations. Just your apps.
 
 ---
 
-Most TV launchers are heavy, online, and crowded with promotions. BareLauncher is the opposite: a quiet, instant home screen that stays out of your way and respects your hardware. The whole APK is **~140 KB** with **zero runtime dependencies**.
+Most TV launchers are heavy, online, and crowded with promotions. BareLauncher is the opposite: a quiet, instant home screen that stays out of your way and respects your hardware. The minified release APK stays small, and the normal home-screen path performs no background network work.
 
 > **instant navigation · clean UI · low memory · zero distractions**
 
@@ -62,6 +62,7 @@ Most TV launchers are heavy, online, and crowded with promotions. BareLauncher i
 | ⚡ **Instant navigation** | Zero-lag scrolling on a TV remote via a custom recycling shelf — no `RecyclerView`. |
 | 🗂️ **Home row + app drawer** | Favorites on the home screen, a pull-down drawer for the rest. Reorder everything freely with the D-pad. |
 | 🎛️ **Button shortcuts** | Assign remote colour/menu keys to any app directly from the home screen — no Accessibility Service required. |
+| 🏠 **Google TV Home setup** | One-time, on-device ADB setup makes BareLauncher the persistent Home app and includes a built-in restore action. |
 | 🗃️ **Manage apps** | Long-press any app or input to move, hide, rename, or choose custom artwork. Installed apps also expose App info and uninstall actions. |
 | 🎨 **Custom app &amp; input icons** | Pick a local PNG, JPEG, or WebP for apps and HDMI/input tiles, then reset to the original artwork at any time. Images stay private on the device. |
 | ✏️ **Local display names** | Rename apps and TV inputs inside BareLauncher without changing their Android package or system label. Reset restores the original name. |
@@ -79,16 +80,16 @@ Most TV launchers are heavy, online, and crowded with promotions. BareLauncher i
 
 ---
 
-## Why it's so small
+## Why it stays small
 
-**~140 KB**, one universal APK, every Android architecture. The size is a result of the engineering, not the goal:
+The launcher UI and every hot path remain pure Android SDK code:
 
-- Zero runtime AndroidX — no AppCompat, Material, RecyclerView, ConstraintLayout, Lifecycle.
-- Fully programmatic UI — no XML layouts, no inflated resource bloat.
+- Zero runtime AndroidX — no AppCompat, Material, RecyclerView, ConstraintLayout, or Lifecycle.
+- Fully programmatic UI — no XML layouts or inflated resource bloat.
 - Custom recycling shelf instead of `RecyclerView`.
 - R8 minification + resource shrinking on every release.
-- Pure Java; no Kotlin standard library shipped.
-- No native code, no `lib/` folder — same APK on ARMv7, ARMv8 and x86_64.
+- The only direct production dependency is `dadb`, loaded for the explicit Google TV setup/restore flow; it replaces a bundled native `adb` executable.
+- No native code and no `lib/` folder — the same APK runs on ARMv7, ARMv8, and x86_64.
 
 ---
 
@@ -124,10 +125,18 @@ Open the **Downloader** app (by AFTVnews) and enter the code below. It always in
 
 > Not on the Play Store or Amazon Appstore — sideload only.
 
-**Make it your default launcher** — BareLauncher doesn't hijack your home button via Accessibility Services. Set it as home with:
+**Make it your default launcher** — open BareLauncher Settings → **Google TV launcher setup** → **Use BareLauncher as Home**.
 
-- **Launcher Manager (XDA)** — recommended; works on Google TV, Android TV and Fire TV.
-- **Button Mapper** — remap the remote's home button to open BareLauncher.
+1. Enable Network debugging in the TV's Developer options.
+2. Start setup and accept Android's one-time debugging authorization prompt.
+3. BareLauncher selects itself as Home and disables both Google TV launcher packages so the choice survives normal restarts.
+
+This also removes the Google TV quick-settings sidebar. Use **Restore Google TV Home** before uninstalling BareLauncher, or recover over ADB with:
+
+```shell
+adb shell pm enable --user 0 com.google.android.apps.tv.launcherx
+adb shell pm enable --user 0 com.google.android.tungsten.setupwraith
+```
 
 ---
 

@@ -55,3 +55,19 @@ maintainer directly through the repository's contact channels.
 covered by the PolyForm Noncommercial license. Forks must use a
 distinct name and icon. This protects users from confusing third-party
 forks with the original.
+
+## Third-party software
+
+The Google TV setup feature includes the following Apache License 2.0
+software:
+
+- [dadb](https://github.com/mobile-dev-inc/dadb), Copyright (c) 2021
+  mobile.dev inc.
+- [Okio](https://github.com/square/okio), Copyright 2013 Square, Inc.
+- [Kotlin Standard Library](https://github.com/JetBrains/kotlin), JetBrains
+  s.r.o. and Kotlin Programming Language contributors.
+- [JetBrains Java Annotations](https://github.com/JetBrains/java-annotations),
+  JetBrains s.r.o.
+
+A copy of the Apache License 2.0 is available at
+<https://www.apache.org/licenses/LICENSE-2.0>.
