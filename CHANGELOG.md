@@ -7,6 +7,25 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+## [2.6.1] — 2026-09-22
+
+### Changed
+
+- **Settings now open into a compact category hub.** Appearance, wallpaper and
+  idle behavior, apps and shortcuts, default Home and backup, and system
+  settings are grouped into predictable pages with titles, state summaries,
+  drill-through chevrons, D-pad hints, and consistent control alignment.
+- **The Orange focus-border option is now true orange.** Existing selections of
+  the previous red-orange color migrate automatically to the new value.
+
+### Removed
+
+- **Removed the in-app About, QR, Ko-fi, downloader-code, and external-link
+  screens.** System Settings now stays easy to reach as the final top-level
+  settings row.
+
+## [2.6.0] — 2026-09-22
+
 ### Added
 
 - **One-time Google TV Home setup.** From Settings, BareLauncher can connect

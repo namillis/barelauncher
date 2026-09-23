@@ -39,11 +39,15 @@ public class LayoutOptionsTest {
 
     @Test public void focusColorIsOpaqueCyclesAndUsesReadableNames() {
         assertEquals(0xFF123456, LayoutOptions.sanitizeFocusColor(0x00123456));
+        assertEquals(0xFFFF9800, LayoutOptions.sanitizeFocusColor(0xFFFF3D00));
         assertEquals(0xFF00E5FF,
                 LayoutOptions.stepFocusColor(LayoutOptions.DEFAULT_FOCUS_COLOR, 1));
         assertEquals(0xFFE040FB,
                 LayoutOptions.stepFocusColor(LayoutOptions.DEFAULT_FOCUS_COLOR, -1));
+        assertEquals(0xFFFF9800,
+                LayoutOptions.stepFocusColor(0xFFFF4081, 1));
         assertEquals("Cyan", LayoutOptions.focusColorName(0xFF00E5FF));
+        assertEquals("Orange", LayoutOptions.focusColorName(0xFFFF9800));
         assertEquals("Orange", LayoutOptions.focusColorName(0xFFFF3D00));
         assertEquals("Magenta", LayoutOptions.focusColorName(0xFFE040FB));
         assertEquals("White", LayoutOptions.focusColorName(0xFF123456));

@@ -824,7 +824,9 @@ public class LauncherActivity extends Activity {
     // Re-used across opens, torn down on activity destroy.
     private FrameLayout                 settingsOverlay   = null;
     private android.widget.LinearLayout settingsCard      = null;
+    private TextView                    settingsTitleView = null;
     private android.widget.LinearLayout settingsColumn    = null;
+    private TextView                    settingsHintView  = null;
     /** Selection cursor inside the panel — UP/DOWN cycle, OK activates. */
     private int                         settingsSelectedRow = 0;
     /** Prevents duplicate local-ADB operations while authorization or package
@@ -855,38 +857,6 @@ public class LauncherActivity extends Activity {
      *  SLOTS and dismiss the keymap card so the panel re-opens. */
     private boolean                     hideManagerSkipSlotsOnExit = false;
 
-    // ── About overlay (v1.4.9) ───────────────────────────────────────────
-    // Drill-through card opened from the settings panel's "About" row. Shows
-    // the app version (auto, from PackageManager), a Ko-fi support row + QR,
-    // the Downloader code for the latest release, a "check latest on GitHub"
-    // row + QR, and a "Made by Mithun" footer. The two QR-bearing rows are
-    // selectable; the version / code / credit lines carry no selector.
-    private FrameLayout                 aboutOverlay   = null;
-    private android.widget.LinearLayout aboutCard      = null;
-    private android.widget.LinearLayout aboutListView  = null;  // the row list
-    private android.widget.LinearLayout aboutQrView    = null;  // QR sub-view (swaps with the list)
-    private ImageView                   aboutQrImage   = null;
-    private TextView                    aboutQrCaption = null;
-    /** Clickable link shown beneath the QR (opens the same URL in the user's
-     *  browser, for devices that have one). The Ko-fi QR shows the raw URL;
-     *  the GitHub QR shows a short "BareLauncher latest version" label. */
-    private TextView                    aboutQrLink    = null;
-    /** URL the {@link #aboutQrLink} / QR-page OK press opens. Set by
-     *  {@link #showAboutQr(int)} to match the currently shown QR. */
-    private String                      aboutQrUrl     = null;
-    private final android.widget.LinearLayout[] aboutRows = new android.widget.LinearLayout[2];
-    private int                         aboutSelectedRow = 0;
-    private boolean                     aboutOpenedFromSettings = false;
-    private boolean                     aboutShowingQr = false;
-    /** 0 = Ko-fi support, 1 = GitHub latest release. */
-    private static final int ABOUT_ROW_KOFI = 0, ABOUT_ROW_GITHUB = 1;
-    // ⚠ EDIT THESE: your Ko-fi page URL and the Downloader app code that
-    // resolves to your latest GitHub release APK. Placeholders until set.
-    private static final String ABOUT_KOFI_URL       = "https://ko-fi.com/barelauncher";
-    private static final String ABOUT_DOWNLOADER_CODE = "3465597";
-    private static final String ABOUT_GITHUB_RELEASES =
-            "https://github.com/f102mithunysypdlcjr-pixel/BareLauncherv3/releases/latest";
-
     /** Single shared dim backdrop View added to {@link #root} in
      *  {@link #buildLayout}. Both the settings panel and the keymap
      *  card reference it via {@link #ensureOverlayBackdropVisible} /
@@ -899,31 +869,31 @@ public class LauncherActivity extends Activity {
      *  constant across the entire modal flow. */
     private View                        overlayBackdrop = null;
 
-    /** Settings panel pages: the main list, plus Layout,
-     *  Wallpaper/Slideshow, and Backup/Restore sub-views. Navigating into a
-     *  sub-page rebuilds the row column; BACK returns to MAIN unless a changed
-     *  Layout page closes to apply its new geometry. */
+    /** Settings category hub and its drill-through pages. Every first-level
+     *  category returns to the five-row hub; maintenance pages return to
+     *  Default home & backup. Appearance changes still close the panel when Back must
+     *  recreate the launcher geometry. */
     private static final int SPAGE_MAIN = 0, SPAGE_WALLPAPER = 1,
-            SPAGE_BACKUP = 2, SPAGE_LAYOUT = 3, SPAGE_LAUNCHER_SETUP = 4;
+            SPAGE_BACKUP = 2, SPAGE_APPEARANCE = 3, SPAGE_LAUNCHER_SETUP = 4,
+            SPAGE_APPS = 5, SPAGE_DEVICE = 6;
     private int settingsPage = SPAGE_MAIN;
 
-    // Stable settings-row identifiers (NOT list positions — the panel is now
-    // page-based, so identity must be position-independent).
+    // Stable settings-row identifiers (NOT list positions — the panel is
+    // page-based, so identity must remain position-independent).
     private static final int SR_HIDE_APPS          = 0;
     private static final int SR_KEYMAP             = 1;
     private static final int SR_WALLPAPER_MENU     = 2;   // → SPAGE_WALLPAPER
     private static final int SR_CLOCK              = 3;
     private static final int SR_BACKUP_MENU        = 4;   // → SPAGE_BACKUP
     private static final int SR_SYSTEM             = 5;
-    private static final int SR_ABOUT              = 6;
     private static final int SR_SET_WALLPAPER      = 7;
     private static final int SR_SLIDESHOW_FOLDER   = 8;
     private static final int SR_SLIDESHOW_DURATION = 9;
     private static final int SR_SLIDESHOW_RESTART  = 10;
     private static final int SR_BACKUP             = 11;
     private static final int SR_RESTORE            = 12;
-    private static final int SR_IDLE_HIDE          = 13;  // hide UI when idle (slideshow sub-page)
-    private static final int SR_LAYOUT_MENU        = 14;  // → SPAGE_LAYOUT
+    private static final int SR_IDLE_HIDE          = 13;
+    private static final int SR_APPEARANCE_MENU    = 14;  // → SPAGE_APPEARANCE
     private static final int SR_LAYOUT_COLUMNS     = 15;
     private static final int SR_CARD_CORNER        = 16;
     private static final int SR_FOCUS_BORDER       = 17;
@@ -931,32 +901,57 @@ public class LauncherActivity extends Activity {
     private static final int SR_LAUNCHER_SETUP_MENU = 19; // → SPAGE_LAUNCHER_SETUP
     private static final int SR_LAUNCHER_ACTIVATE   = 20;
     private static final int SR_LAUNCHER_RESTORE    = 21;
+    private static final int SR_APPS_MENU            = 22; // → SPAGE_APPS
+    private static final int SR_DEVICE_MENU          = 23; // → SPAGE_DEVICE
 
     private static final int[] SROWS_MAIN = {
-            SR_HIDE_APPS, SR_KEYMAP, SR_LAYOUT_MENU, SR_WALLPAPER_MENU, SR_CLOCK,
-            SR_BACKUP_MENU, SR_LAUNCHER_SETUP_MENU, SR_SYSTEM, SR_ABOUT };
+            SR_APPEARANCE_MENU, SR_WALLPAPER_MENU, SR_APPS_MENU,
+            SR_DEVICE_MENU, SR_SYSTEM };
+    private static final int[] SROWS_APPEARANCE = {
+            SR_LAYOUT_COLUMNS, SR_CARD_CORNER, SR_FOCUS_BORDER,
+            SR_FOCUS_COLOR, SR_CLOCK };
     private static final int[] SROWS_WALLPAPER = {
             SR_SET_WALLPAPER, SR_SLIDESHOW_FOLDER, SR_SLIDESHOW_DURATION,
             SR_SLIDESHOW_RESTART, SR_IDLE_HIDE };
+    private static final int[] SROWS_APPS = {
+            SR_HIDE_APPS, SR_KEYMAP };
+    private static final int[] SROWS_DEVICE = {
+            SR_LAUNCHER_SETUP_MENU, SR_BACKUP_MENU };
     private static final int[] SROWS_BACKUP = {
             SR_BACKUP, SR_RESTORE };
-    private static final int[] SROWS_LAYOUT = {
-            SR_LAYOUT_COLUMNS, SR_CARD_CORNER, SR_FOCUS_BORDER, SR_FOCUS_COLOR };
     private static final int[] SROWS_LAUNCHER_SETUP = {
             SR_LAUNCHER_ACTIVATE, SR_LAUNCHER_RESTORE };
-
-    /** Main-list row to re-select when returning from a sub-page. */
-    private int settingsReturnRowId = SR_WALLPAPER_MENU;
 
     /** Row IDs of the page currently shown. */
     private int[] settingsPageRows() {
         switch (settingsPage) {
+            case SPAGE_APPEARANCE:     return SROWS_APPEARANCE;
             case SPAGE_WALLPAPER:      return SROWS_WALLPAPER;
+            case SPAGE_APPS:           return SROWS_APPS;
+            case SPAGE_DEVICE:         return SROWS_DEVICE;
             case SPAGE_BACKUP:         return SROWS_BACKUP;
-            case SPAGE_LAYOUT:         return SROWS_LAYOUT;
             case SPAGE_LAUNCHER_SETUP: return SROWS_LAUNCHER_SETUP;
             default:                   return SROWS_MAIN;
         }
+    }
+
+    /** Title resource for the current page. */
+    private int settingsPageTitleRes() {
+        switch (settingsPage) {
+            case SPAGE_APPEARANCE:     return R.string.settings_title_appearance;
+            case SPAGE_WALLPAPER:      return R.string.settings_title_wallpaper;
+            case SPAGE_APPS:           return R.string.settings_title_apps;
+            case SPAGE_DEVICE:         return R.string.settings_title_device;
+            case SPAGE_BACKUP:         return R.string.settings_title_backup;
+            case SPAGE_LAUNCHER_SETUP: return R.string.settings_title_launcher_setup;
+            default:                   return R.string.settings_title_main;
+        }
+    }
+
+    /** Remote-control hint for the current page. */
+    private int settingsPageHintRes() {
+        return settingsPage == SPAGE_APPEARANCE || settingsPage == SPAGE_WALLPAPER
+                ? R.string.settings_hint_adjust : R.string.settings_hint_open;
     }
 
     /** Label resource for a row id. */
@@ -964,7 +959,9 @@ public class LauncherActivity extends Activity {
         switch (rowId) {
             case SR_HIDE_APPS:          return R.string.settings_row_manage_hidden;
             case SR_KEYMAP:             return R.string.settings_row_button_shortcuts;
-            case SR_LAYOUT_MENU:        return R.string.settings_row_layout_menu;
+            case SR_APPEARANCE_MENU:    return R.string.settings_row_appearance_menu;
+            case SR_APPS_MENU:          return R.string.settings_row_apps_menu;
+            case SR_DEVICE_MENU:        return R.string.settings_row_device_menu;
             case SR_LAYOUT_COLUMNS:     return R.string.settings_row_layout_columns;
             case SR_CARD_CORNER:        return R.string.settings_row_card_corner;
             case SR_FOCUS_BORDER:       return R.string.settings_row_focus_border;
@@ -973,7 +970,6 @@ public class LauncherActivity extends Activity {
             case SR_CLOCK:              return R.string.settings_row_show_clock;
             case SR_BACKUP_MENU:        return R.string.settings_row_backup_menu;
             case SR_SYSTEM:             return R.string.settings_row_system_settings;
-            case SR_ABOUT:              return R.string.settings_row_about;
             case SR_SET_WALLPAPER:      return R.string.settings_row_set_wallpaper;
             case SR_SLIDESHOW_FOLDER:   return R.string.settings_row_slideshow_folder;
             case SR_SLIDESHOW_DURATION: return R.string.settings_row_slideshow_duration;
@@ -984,11 +980,19 @@ public class LauncherActivity extends Activity {
             case SR_LAUNCHER_SETUP_MENU: return R.string.settings_row_launcher_setup_menu;
             case SR_LAUNCHER_ACTIVATE:  return R.string.settings_row_launcher_activate;
             case SR_LAUNCHER_RESTORE:   return R.string.settings_row_launcher_restore;
-            default:                    return R.string.settings_row_about;
+            default:                    return R.string.settings_row_system_settings;
         }
     }
 
-    /** Settings rows that show a right-side state indicator. */
+    /** True for the four two-line category rows on the main hub. */
+    private static boolean settingsRowHasSummary(int rowId) {
+        return rowId == SR_APPEARANCE_MENU
+                || rowId == SR_WALLPAPER_MENU
+                || rowId == SR_APPS_MENU
+                || rowId == SR_DEVICE_MENU;
+    }
+
+    /** True for rows that show a value, state, or drill-through chevron. */
     private static boolean settingsRowHasIndicator(int rowId) {
         return rowId == SR_CLOCK
             || rowId == SR_LAYOUT_COLUMNS
@@ -999,7 +1003,12 @@ public class LauncherActivity extends Activity {
             || rowId == SR_SLIDESHOW_DURATION
             || rowId == SR_SLIDESHOW_RESTART
             || rowId == SR_IDLE_HIDE
-            || rowId == SR_LAUNCHER_SETUP_MENU;
+            || rowId == SR_LAUNCHER_SETUP_MENU
+            || rowId == SR_APPEARANCE_MENU
+            || rowId == SR_WALLPAPER_MENU
+            || rowId == SR_APPS_MENU
+            || rowId == SR_DEVICE_MENU
+            || rowId == SR_BACKUP_MENU;
     }
 
     /** Widest state string an indicator row can show, used to reserve width at
@@ -1011,17 +1020,106 @@ public class LauncherActivity extends Activity {
             case SR_FOCUS_BORDER:       return "Off";
             case SR_FOCUS_COLOR:        return "< Magenta >";
             case SR_SLIDESHOW_FOLDER:   return "Not set";
-            case SR_SLIDESHOW_DURATION: return "< 1.5 min >";   // widest bracketed label
+            case SR_SLIDESHOW_DURATION: return "< 1.5 min >";
             case SR_SLIDESHOW_RESTART:  return "Off";
-            case SR_IDLE_HIDE:          return "< 5 min >";     // widest bracketed label
-            case SR_LAUNCHER_SETUP_MENU: return "Working";
-            default:                    return "Full";           // SR_CLOCK
+            case SR_IDLE_HIDE:          return "< 5 min >";
+            case SR_LAUNCHER_SETUP_MENU: return "Working ›";
+            case SR_APPEARANCE_MENU:
+            case SR_WALLPAPER_MENU:
+            case SR_APPS_MENU:
+            case SR_DEVICE_MENU:
+            case SR_BACKUP_MENU:        return "›";
+            default:                    return "Full";
         }
     }
 
-    /** Index of {@code rowId} within the MAIN page (0 if absent). */
-    private static int mainRowIndex(int rowId) {
-        for (int i = 0; i < SROWS_MAIN.length; i++) if (SROWS_MAIN[i] == rowId) return i;
+    /** Plain duration for a category summary, without adjustment brackets. */
+    private static String compactDurationLabel(int seconds) {
+        if (seconds <= 0) return "Off";
+        if (seconds < 60) return seconds + " sec";
+        if (seconds == 90) return "1.5 min";
+        if (seconds % 60 == 0) return (seconds / 60) + " min";
+        return seconds + " sec";
+    }
+
+    private String clockSummaryLabel() {
+        if (clockMode == CLOCK_FULL) return getString(R.string.settings_clock_full);
+        if (clockMode == CLOCK_TIME_ONLY) return getString(R.string.settings_clock_time);
+        return getString(R.string.settings_clock_off);
+    }
+
+    private String googleTvHomeStatusLabel() {
+        if (googleTvSetupRunning.get()) return getString(R.string.google_tv_status_working);
+        GoogleTvSetup.State state = googleTvSetupStatus == null
+                ? GoogleTvSetup.State.NOT_CONFIGURED : googleTvSetupStatus.state;
+        if (state == GoogleTvSetup.State.ACTIVE) return getString(R.string.google_tv_status_active);
+        if (state == GoogleTvSetup.State.PARTIAL) return getString(R.string.google_tv_status_partial);
+        return getString(R.string.google_tv_status_not_set);
+    }
+
+    /** Secondary line for the current main-hub category. */
+    private String settingsCategorySummary(int rowId) {
+        if (rowId == SR_APPEARANCE_MENU) {
+            return getResources().getQuantityString(R.plurals.settings_summary_appearance,
+                    layoutColumns, layoutColumns, clockSummaryLabel());
+        }
+        if (rowId == SR_WALLPAPER_MENU) {
+            String slideshow = slideshowFolderUri == null
+                    ? getString(R.string.settings_summary_no_folder)
+                    : getString(R.string.settings_summary_slideshow,
+                            compactDurationLabel(slideshowDurationSec));
+            return getString(R.string.settings_summary_wallpaper,
+                    slideshow, compactDurationLabel(idleHideSec));
+        }
+        if (rowId == SR_APPS_MENU) {
+            return getString(R.string.settings_summary_apps);
+        }
+        if (rowId == SR_DEVICE_MENU) {
+            return getString(R.string.settings_summary_device, googleTvHomeStatusLabel());
+        }
+        return "";
+    }
+
+    /** Styled two-line label for a main category, or a normal one-line label. */
+    private CharSequence settingsRowText(int rowId, boolean selected) {
+        String title = getString(settingsRowLabelRes(rowId));
+        if (!settingsRowHasSummary(rowId)) return title;
+        String summary = settingsCategorySummary(rowId);
+        android.text.SpannableString text = new android.text.SpannableString(
+                title + "\n" + summary);
+        int summaryStart = title.length() + 1;
+        text.setSpan(new android.text.style.RelativeSizeSpan(0.76f), summaryStart,
+                text.length(), android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        text.setSpan(new android.text.style.StyleSpan(Typeface.NORMAL), summaryStart,
+                text.length(), android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        text.setSpan(new android.text.style.ForegroundColorSpan(
+                        selected ? 0xFF626268 : 0x99FFFFFF),
+                summaryStart, text.length(), android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        return text;
+    }
+
+    /** Parent page for Back navigation from {@code page}. */
+    private static int settingsParentPage(int page) {
+        return page == SPAGE_BACKUP || page == SPAGE_LAUNCHER_SETUP
+                ? SPAGE_DEVICE : SPAGE_MAIN;
+    }
+
+    /** Row to reselect on the parent page after leaving {@code page}. */
+    private static int settingsParentRowId(int page) {
+        switch (page) {
+            case SPAGE_APPEARANCE:     return SR_APPEARANCE_MENU;
+            case SPAGE_WALLPAPER:      return SR_WALLPAPER_MENU;
+            case SPAGE_APPS:           return SR_APPS_MENU;
+            case SPAGE_DEVICE:         return SR_DEVICE_MENU;
+            case SPAGE_BACKUP:         return SR_BACKUP_MENU;
+            case SPAGE_LAUNCHER_SETUP: return SR_LAUNCHER_SETUP_MENU;
+            default:                   return SR_APPEARANCE_MENU;
+        }
+    }
+
+    /** Index of {@code rowId} within {@code rows}, or the first row. */
+    private static int settingsRowIndex(int[] rows, int rowId) {
+        for (int i = 0; i < rows.length; i++) if (rows[i] == rowId) return i;
         return 0;
     }
 
@@ -1921,12 +2019,6 @@ public class LauncherActivity extends Activity {
                     hideFolderPicker();
                     return;
                 }
-                // 0b. About overlay open → its own Back (QR → list, list → settings).
-                FrameLayout ab = aboutOverlay;
-                if (ab != null && ab.getVisibility() == View.VISIBLE) {
-                    handleAboutKey(KeyEvent.KEYCODE_BACK);
-                    return;
-                }
                 // 1. Keymap overlay open → close it.
                 FrameLayout ko = keymapOverlay;
                 if (ko != null && ko.getVisibility() == View.VISIBLE) {
@@ -2249,12 +2341,9 @@ public class LauncherActivity extends Activity {
         drawer = null;
         netBtn = null; favoritesBlurLayer = null; ringView = null; root = null;
         mapperBtnView = null;
-        settingsOverlay = null; settingsCard = null; settingsColumn = null;
+        settingsOverlay = null; settingsCard = null; settingsTitleView = null;
+        settingsColumn = null; settingsHintView = null;
         folderPickerOverlay = null; folderPickerCard = null; folderPickerCol = null; folderPickerScroll = null;
-        aboutOverlay = null; aboutCard = null; aboutListView = null;
-        aboutQrView = null; aboutQrImage = null; aboutQrCaption = null;
-        aboutQrLink = null; aboutQrUrl = null;
-        aboutRows[0] = null; aboutRows[1] = null;
         menuOverlay = null; menuHide = null; menuChangeIcon = null; menuResetIcon = null;
         menuRename = null; menuUninstall = null; menuAppInfo = null; menuMove = null;
         keymapOverlay = null; keymapColumn = null; keymapCard = null;
@@ -2375,10 +2464,6 @@ public class LauncherActivity extends Activity {
         FrameLayout fp = folderPickerOverlay;
         if (fp != null && fp.getVisibility() == View.VISIBLE) {
             hideFolderPicker(); return;
-        }
-        FrameLayout ao = aboutOverlay;
-        if (ao != null && ao.getVisibility() == View.VISIBLE) {
-            handleAboutKey(KeyEvent.KEYCODE_BACK); return;
         }
         FrameLayout sp = settingsOverlay;
         if (sp != null && sp.getVisibility() == View.VISIBLE) {
@@ -7085,18 +7170,6 @@ public class LauncherActivity extends Activity {
         }
         // Any key press resets the idle timer (user is active).
         if (event.getAction() == KeyEvent.ACTION_DOWN) scheduleIdleHide();
-        FrameLayout ao = aboutOverlay;
-        if (ao != null && ao.getVisibility() == View.VISIBLE) {
-            if (event.getAction() == KeyEvent.ACTION_DOWN) {
-                if (handleAboutKey(event.getKeyCode())) return true;
-                return super.dispatchKeyEvent(event);
-            }
-            // Mirror the settings panel's KEY_UP contract: only swallow the
-            // UP edge of keys we consume on DOWN; let device-control keys
-            // (volume / power / media) reach the platform.
-            if (isLetThroughKey(event.getKeyCode())) return super.dispatchKeyEvent(event);
-            return true;
-        }
         FrameLayout fp = folderPickerOverlay;
         if (fp != null && fp.getVisibility() == View.VISIBLE) {
             if (event.getAction() == KeyEvent.ACTION_DOWN) {
@@ -7214,11 +7287,8 @@ public class LauncherActivity extends Activity {
      *  re-open is queued. Drives the backdrop's stay-or-fade decision. */
     private boolean anyOverlayLogicallyOpen() {
         if (keymapOpenedFromSettings) return true;
-        if (aboutOpenedFromSettings) return true;
         FrameLayout fp = folderPickerOverlay;
         if (fp != null && fp.getVisibility() == View.VISIBLE) return true;
-        FrameLayout ao = aboutOverlay;
-        if (ao != null && ao.getVisibility() == View.VISIBLE) return true;
         FrameLayout sp = settingsOverlay;
         if (sp != null && sp.getVisibility() == View.VISIBLE) return true;
         FrameLayout ko = keymapOverlay;
@@ -7305,6 +7375,16 @@ public class LauncherActivity extends Activity {
         card.setClipChildren(false);
         card.setClipToPadding(false);
 
+        TextView title = new TextView(this);
+        title.setText(settingsPageTitleRes());
+        title.setTextColor(0x99FFFFFF);
+        title.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 11);
+        title.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+        title.setAllCaps(true);
+        title.setLetterSpacing(0.08f);
+        title.setPadding(dp(10), dp(3), dp(10), dp(7));
+        card.addView(title, new android.widget.LinearLayout.LayoutParams(WRAP, WRAP));
+
         // Vertical column for the current page's rows.
         android.widget.LinearLayout col = new android.widget.LinearLayout(this);
         col.setOrientation(android.widget.LinearLayout.VERTICAL);
@@ -7312,15 +7392,27 @@ public class LauncherActivity extends Activity {
         col.setClipToPadding(false);
 
         card.addView(col, new android.widget.LinearLayout.LayoutParams(WRAP, WRAP));
+
+        TextView hint = new TextView(this);
+        hint.setText(settingsPageHintRes());
+        hint.setTextColor(0x80FFFFFF);
+        hint.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 9);
+        hint.setTypeface(Typeface.create("sans-serif", Typeface.NORMAL));
+        hint.setSingleLine(true);
+        hint.setPadding(dp(10), dp(7), dp(10), dp(3));
+        card.addView(hint, new android.widget.LinearLayout.LayoutParams(WRAP, WRAP));
+
         FrameLayout.LayoutParams cardLp = new FrameLayout.LayoutParams(WRAP, WRAP);
         cardLp.gravity = Gravity.TOP | Gravity.END;
         card.setLayoutParams(cardLp);
         ov.addView(card);
         r.addView(ov);
-        settingsOverlay = ov;
-        settingsCard    = card;
-        settingsColumn  = col;
-        settingsPage    = SPAGE_MAIN;
+        settingsOverlay   = ov;
+        settingsCard      = card;
+        settingsTitleView = title;
+        settingsColumn    = col;
+        settingsHintView  = hint;
+        settingsPage      = SPAGE_MAIN;
         rebuildSettingsColumn();
     }
 
@@ -7332,12 +7424,17 @@ public class LauncherActivity extends Activity {
     private void rebuildSettingsColumn() {
         final android.widget.LinearLayout col = settingsColumn;
         if (col == null) return;
+        TextView title = settingsTitleView;
+        if (title != null) title.setText(settingsPageTitleRes());
+        TextView hint = settingsHintView;
+        if (hint != null) hint.setText(settingsPageHintRes());
         col.removeAllViews();
         for (int rowId : settingsPageRows()) {
             android.widget.LinearLayout row = new android.widget.LinearLayout(this);
             row.setOrientation(android.widget.LinearLayout.HORIZONTAL);
             row.setGravity(Gravity.CENTER_VERTICAL);
             row.setPadding(dp(10), dp(7), dp(10), dp(7));
+            row.setMinimumWidth(dp(250));
             android.graphics.drawable.GradientDrawable rowBg =
                     new android.graphics.drawable.GradientDrawable();
             rowBg.setCornerRadius(dp(9));
@@ -7345,15 +7442,18 @@ public class LauncherActivity extends Activity {
             row.setBackground(rowBg);
 
             TextView label = new TextView(this);
-            label.setText(settingsRowLabelRes(rowId));
+            label.setText(settingsRowText(rowId, false));
             label.setTextColor(0xCCFFFFFF);
             label.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 13);
             label.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
-            label.setSingleLine(true);
+            boolean hasSummary = settingsRowHasSummary(rowId);
+            label.setSingleLine(!hasSummary);
+            label.setMaxLines(hasSummary ? 2 : 1);
+            label.setLineSpacing(0f, 0.95f);
             label.setEllipsize(TextUtils.TruncateAt.END);
             android.widget.LinearLayout.LayoutParams labelLp =
-                    new android.widget.LinearLayout.LayoutParams(WRAP, WRAP);
-            labelLp.setMarginEnd(settingsRowHasIndicator(rowId) ? dp(14) : 0);
+                    new android.widget.LinearLayout.LayoutParams(0, WRAP, 1f);
+            labelLp.setMarginEnd(settingsRowHasIndicator(rowId) ? dp(10) : 0);
             row.addView(label, labelLp);
 
             if (settingsRowHasIndicator(rowId)) {
@@ -7435,8 +7535,8 @@ public class LauncherActivity extends Activity {
         // fresh open from the gear starts at the top row.
         settingsPage = SPAGE_MAIN;
         rebuildSettingsColumn();
-        settingsSelectedRow = mainRowIndex(pendingSettingsCursor);
-        pendingSettingsCursor = SR_HIDE_APPS;
+        settingsSelectedRow = settingsRowIndex(SROWS_MAIN, pendingSettingsCursor);
+        pendingSettingsCursor = SR_APPEARANCE_MENU;
         refreshSettingsRows();
 
         // Anchor the card just below the gear toolbar pill — shared
@@ -7536,16 +7636,26 @@ public class LauncherActivity extends Activity {
                 ((android.graphics.drawable.GradientDrawable) bg)
                         .setColor(sel ? hlWhite : idleBg);
             }
+            int[] pageRows = settingsPageRows();
+            int rowId = (i < pageRows.length) ? pageRows[i] : -1;
             View labelView     = row.getChildAt(0);
             View indicatorView = row.getChildAt(1);
             if (labelView instanceof TextView) {
-                ((TextView) labelView).setTextColor(sel ? selTx : idleTx);
+                TextView label = (TextView) labelView;
+                label.setText(settingsRowText(rowId, sel));
+                label.setTextColor(sel ? selTx : idleTx);
             }
             if (indicatorView instanceof TextView) {
                 TextView ind = (TextView) indicatorView;
-                int[] pageRows = settingsPageRows();
-                int rowId = (i < pageRows.length) ? pageRows[i] : -1;
-                if (rowId == SR_LAYOUT_COLUMNS) {
+                ind.setAlpha(1f);
+                if (rowId == SR_APPEARANCE_MENU
+                        || rowId == SR_WALLPAPER_MENU
+                        || rowId == SR_APPS_MENU
+                        || rowId == SR_DEVICE_MENU
+                        || rowId == SR_BACKUP_MENU) {
+                    ind.setText("›");
+                    ind.setTextColor(sel ? selTx : 0x99FFFFFF);
+                } else if (rowId == SR_LAYOUT_COLUMNS) {
                     ind.setText(getString(R.string.settings_value_columns, layoutColumns));
                     ind.setTextColor(sel ? selTx : 0xFF7DD3FC);
                 } else if (rowId == SR_CARD_CORNER) {
@@ -7587,10 +7697,8 @@ public class LauncherActivity extends Activity {
                     GoogleTvSetup.State state = googleTvSetupStatus == null
                             ? GoogleTvSetup.State.NOT_CONFIGURED : googleTvSetupStatus.state;
                     boolean working = googleTvSetupRunning.get();
-                    ind.setText(working ? R.string.google_tv_status_working
-                            : state == GoogleTvSetup.State.ACTIVE ? R.string.google_tv_status_active
-                            : state == GoogleTvSetup.State.PARTIAL ? R.string.google_tv_status_partial
-                            : R.string.google_tv_status_not_set);
+                    ind.setText(getString(R.string.settings_value_open,
+                            googleTvHomeStatusLabel()));
                     boolean ready = state == GoogleTvSetup.State.ACTIVE && !working;
                     ind.setTextColor(ready ? (sel ? selTx : 0xFF7DD3FC)
                                            : (sel ? 0x66111114 : 0x99FFFFFF));
@@ -7647,13 +7755,13 @@ public class LauncherActivity extends Activity {
                 return true;
             case KeyEvent.KEYCODE_BACK:
             case KeyEvent.KEYCODE_ESCAPE:
-                // BACK on a changed Layout page applies by closing the panel;
-                // this prevents a deferred recreate from colliding with a
-                // different main-page action such as opening a file picker.
-                if (settingsPage == SPAGE_LAYOUT && layoutApplyPending) {
+                // Appearance changes still close the panel so recreate cannot
+                // collide with a different category action. Every other page
+                // returns to its mapped parent and reselects the opening row.
+                if (settingsPage == SPAGE_APPEARANCE && layoutApplyPending) {
                     hideSettingsPanel();
                 } else if (settingsPage != SPAGE_MAIN) {
-                    returnToSettingsMain();
+                    returnToSettingsParent();
                 } else {
                     hideSettingsPanel();
                 }
@@ -7672,20 +7780,21 @@ public class LauncherActivity extends Activity {
         return (i >= 0 && i < rows.length) ? rows[i] : -1;
     }
 
-    /** Open a sub-page, remembering the main-list row to return to. */
-    private void enterSettingsPage(int page, int returnRowId) {
-        settingsReturnRowId = returnRowId;
+    /** Open a settings page at its first row. */
+    private void enterSettingsPage(int page) {
         settingsPage = page;
         settingsSelectedRow = 0;
         rebuildSettingsColumn();
         refreshSettingsRows();
     }
 
-    /** Return from a sub-page to the main list, landing on the menu row. */
-    private void returnToSettingsMain() {
-        settingsPage = SPAGE_MAIN;
+    /** Return to the mapped parent page and reselect the row that opened it. */
+    private void returnToSettingsParent() {
+        int childPage = settingsPage;
+        settingsPage = settingsParentPage(childPage);
         rebuildSettingsColumn();
-        settingsSelectedRow = mainRowIndex(settingsReturnRowId);
+        settingsSelectedRow = settingsRowIndex(
+                settingsPageRows(), settingsParentRowId(childPage));
         refreshSettingsRows();
     }
 
@@ -7700,8 +7809,8 @@ public class LauncherActivity extends Activity {
     private void activateSettingsRowId(int rowId) {
         switch (rowId) {
             case SR_HIDE_APPS:
-                // Hand off to the keymap card's HIDE mode (returns here on Back).
-                pendingSettingsCursor       = SR_HIDE_APPS;
+                // Hand off to HIDE mode, then return to the Apps category.
+                pendingSettingsCursor       = SR_APPS_MENU;
                 keymapOpenedFromSettings    = true;
                 hideManagerSkipSlotsOnExit  = true;
                 hideSettingsPanel();
@@ -7709,13 +7818,19 @@ public class LauncherActivity extends Activity {
                 enterHideManager();
                 break;
             case SR_KEYMAP:
-                pendingSettingsCursor    = SR_KEYMAP;
+                pendingSettingsCursor    = SR_APPS_MENU;
                 keymapOpenedFromSettings = true;
                 hideSettingsPanel();
                 showKeymapOverlay();
                 break;
-            case SR_LAYOUT_MENU:
-                enterSettingsPage(SPAGE_LAYOUT, SR_LAYOUT_MENU);
+            case SR_APPEARANCE_MENU:
+                enterSettingsPage(SPAGE_APPEARANCE);
+                break;
+            case SR_APPS_MENU:
+                enterSettingsPage(SPAGE_APPS);
+                break;
+            case SR_DEVICE_MENU:
+                enterSettingsPage(SPAGE_DEVICE);
                 break;
             case SR_LAYOUT_COLUMNS:
                 stepLayoutColumns(+1);
@@ -7730,10 +7845,10 @@ public class LauncherActivity extends Activity {
                 stepFocusColor(+1);
                 break;
             case SR_WALLPAPER_MENU:
-                enterSettingsPage(SPAGE_WALLPAPER, SR_WALLPAPER_MENU);
+                enterSettingsPage(SPAGE_WALLPAPER);
                 break;
             case SR_BACKUP_MENU:
-                enterSettingsPage(SPAGE_BACKUP, SR_BACKUP_MENU);
+                enterSettingsPage(SPAGE_BACKUP);
                 break;
             case SR_CLOCK:
                 // 3-state cycle: FULL → TIME_ONLY → OFF → FULL.
@@ -7757,7 +7872,7 @@ public class LauncherActivity extends Activity {
                 refreshSettingsRows();
                 break;
             case SR_LAUNCHER_SETUP_MENU:
-                enterSettingsPage(SPAGE_LAUNCHER_SETUP, SR_LAUNCHER_SETUP_MENU);
+                enterSettingsPage(SPAGE_LAUNCHER_SETUP);
                 break;
             case SR_LAUNCHER_ACTIVATE:
                 hideSettingsPanel();
@@ -7770,12 +7885,6 @@ public class LauncherActivity extends Activity {
             case SR_SYSTEM:
                 hideSettingsPanel();
                 openSystemSettings();
-                break;
-            case SR_ABOUT:
-                pendingSettingsCursor = SR_ABOUT;
-                aboutOpenedFromSettings = true;
-                hideSettingsPanel();
-                showAboutOverlay();
                 break;
             case SR_SET_WALLPAPER:
                 hideSettingsPanel();
@@ -7917,474 +8026,6 @@ public class LauncherActivity extends Activity {
                 || cardCornerPercent != appliedCardCornerPercent
                 || focusBorderEnabled != appliedFocusBorderEnabled
                 || focusBorderColor != appliedFocusBorderColor;
-    }
-
-    // ── About overlay build / show / hide / navigate / QR ───────────────
-
-    /** App version string for the About card header, read from the installed
-     *  package so it always matches the actual build (auto-updates on every
-     *  release without a code change). */
-    private String appVersionName() {
-        try {
-            String v = getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
-            return (v != null) ? "v" + v : "";
-        } catch (Exception e) {
-            return "";
-        }
-    }
-
-    /** Lazy-build the About card on first {@link #showAboutOverlay}. */
-    private void buildAboutOverlay() {
-        FrameLayout r = root; if (r == null) return;
-        FrameLayout ov = new FrameLayout(this) {
-            @Override public boolean onTouchEvent(MotionEvent ev) {
-                if (ev.getAction() == MotionEvent.ACTION_DOWN) {
-                    android.widget.LinearLayout c = aboutCard;
-                    if (c != null) {
-                        float x = ev.getX(), y = ev.getY();
-                        float l = c.getX(), t = c.getY();
-                        float rt = l + c.getWidth(), b = t + c.getHeight();
-                        if (x < l || x > rt || y < t || y > b) { hideAboutOverlay(); return true; }
-                    }
-                }
-                return super.onTouchEvent(ev);
-            }
-        };
-        ov.setLayoutParams(new FrameLayout.LayoutParams(MATCH, MATCH));
-        ov.setVisibility(View.GONE);
-        ov.setClickable(true);
-        ov.setFocusable(true);
-
-        android.widget.LinearLayout card = new android.widget.LinearLayout(this);
-        card.setOrientation(android.widget.LinearLayout.VERTICAL);
-        android.graphics.drawable.GradientDrawable cardBg =
-                new android.graphics.drawable.GradientDrawable();
-        cardBg.setColor(0xF21A1A1F);
-        cardBg.setStroke(Math.max(1, dp(1) / 2), 0x1AFFFFFF);
-        cardBg.setCornerRadius(dp(18));
-        card.setBackground(cardBg);
-        card.setPadding(dp(18), dp(14), dp(18), dp(14));
-        card.setClipChildren(false);
-        card.setClipToPadding(false);
-
-        final int contentW = dp(270);
-
-        // ── List sub-view ──
-        android.widget.LinearLayout list = new android.widget.LinearLayout(this);
-        list.setOrientation(android.widget.LinearLayout.VERTICAL);
-
-        // Version (top, no selector) — auto from the installed package.
-        TextView version = new TextView(this);
-        version.setText(getString(R.string.about_app_name) + "   " + appVersionName());
-        version.setTextColor(0xFFFFFFFF);
-        version.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 17);
-        version.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
-        version.setGravity(Gravity.CENTER_HORIZONTAL);
-        android.widget.LinearLayout.LayoutParams vLp =
-                new android.widget.LinearLayout.LayoutParams(contentW, WRAP);
-        vLp.bottomMargin = dp(14);
-        list.addView(version, vLp);
-
-        // Ko-fi support row (selectable, leading cup icon).
-        aboutRows[ABOUT_ROW_KOFI] = buildAboutRow(getString(R.string.about_kofi), makeKofiIcon(), contentW);
-        list.addView(aboutRows[ABOUT_ROW_KOFI]);
-
-        // Downloader code (no selector).
-        TextView code = new TextView(this);
-        code.setText(getString(R.string.about_downloader_code, ABOUT_DOWNLOADER_CODE));
-        code.setTextColor(0xB3FFFFFF);
-        code.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 13);
-        code.setTypeface(Typeface.create("sans-serif", Typeface.NORMAL));
-        code.setGravity(Gravity.CENTER_HORIZONTAL);
-        android.widget.LinearLayout.LayoutParams codeLp =
-                new android.widget.LinearLayout.LayoutParams(contentW, WRAP);
-        codeLp.topMargin = dp(4);
-        codeLp.bottomMargin = dp(4);
-        list.addView(code, codeLp);
-
-        // GitHub latest-release row (selectable, no icon).
-        aboutRows[ABOUT_ROW_GITHUB] = buildAboutRow(getString(R.string.about_check_github), null, contentW);
-        list.addView(aboutRows[ABOUT_ROW_GITHUB]);
-
-        // Footer credit (no selector).
-        TextView credit = new TextView(this);
-        credit.setText(R.string.about_made_by);
-        credit.setTextColor(0x80FFFFFF);
-        credit.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 12);
-        credit.setTypeface(Typeface.create("sans-serif", Typeface.NORMAL));
-        credit.setGravity(Gravity.CENTER_HORIZONTAL);
-        android.widget.LinearLayout.LayoutParams crLp =
-                new android.widget.LinearLayout.LayoutParams(contentW, WRAP);
-        crLp.topMargin = dp(14);
-        list.addView(credit, crLp);
-
-        // Per-row click handlers (mirror d-pad activation).
-        for (int i = 0; i < aboutRows.length; i++) {
-            final int idx = i;
-            android.widget.LinearLayout row = aboutRows[i];
-            if (row == null) continue;
-            row.setClickable(true);
-            row.setOnClickListener(v -> {
-                v.playSoundEffect(SoundEffectConstants.CLICK);
-                aboutSelectedRow = idx;
-                refreshAboutRows();
-                showAboutQr(idx);
-            });
-        }
-
-        // ── QR sub-view (swaps in over the list) ──
-        android.widget.LinearLayout qr = new android.widget.LinearLayout(this);
-        qr.setOrientation(android.widget.LinearLayout.VERTICAL);
-        qr.setGravity(Gravity.CENTER_HORIZONTAL);
-        qr.setVisibility(View.GONE);
-
-        ImageView qrImg = new ImageView(this);
-        // White plate behind the QR so the quiet zone always reads cleanly
-        // regardless of the (dark) card colour.
-        android.graphics.drawable.GradientDrawable qrPlate =
-                new android.graphics.drawable.GradientDrawable();
-        qrPlate.setColor(0xFFFFFFFF);
-        qrPlate.setCornerRadius(dp(16));
-        qrImg.setBackground(qrPlate);
-        qrImg.setPadding(dp(10), dp(10), dp(10), dp(10));
-        int qrSz = dp(216);
-        qr.addView(qrImg, new android.widget.LinearLayout.LayoutParams(qrSz, qrSz));
-
-        TextView cap = new TextView(this);
-        cap.setTextColor(0xCCFFFFFF);
-        cap.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 12);
-        cap.setTypeface(Typeface.create("sans-serif", Typeface.NORMAL));
-        cap.setGravity(Gravity.CENTER_HORIZONTAL);
-        android.widget.LinearLayout.LayoutParams capLp =
-                new android.widget.LinearLayout.LayoutParams(contentW, WRAP);
-        capLp.topMargin = dp(12);
-        qr.addView(cap, capLp);
-
-        // Clickable link under the QR — opens the same URL in the user's
-        // browser (for boxes that have one). Styled as a rounded pill so it
-        // reads as a button; it is the QR page's single actionable element,
-        // so OK on the QR page activates it (see handleAboutKey). Touch
-        // devices get the OnClickListener too. Dependency-free: a plain
-        // ACTION_VIEW intent, guarded so a browser-less TV just shows a toast.
-        TextView link = new TextView(this);
-        link.setTextColor(0xFF8AB4F8);   // accent "link" blue
-        link.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 13);
-        link.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
-        link.setGravity(Gravity.CENTER);
-        link.setSingleLine(true);
-        link.setEllipsize(TextUtils.TruncateAt.MIDDLE);
-        link.setPadding(dp(14), dp(9), dp(14), dp(9));
-        android.graphics.drawable.GradientDrawable linkBg =
-                new android.graphics.drawable.GradientDrawable();
-        linkBg.setCornerRadius(dp(10));
-        linkBg.setColor(0x1AFFFFFF);
-        linkBg.setStroke(Math.max(1, dp(1) / 2), 0x338AB4F8);
-        link.setBackground(linkBg);
-        link.setClickable(true);
-        link.setFocusable(false);   // d-pad activation is handled in handleAboutKey
-        link.setOnClickListener(v -> {
-            v.playSoundEffect(SoundEffectConstants.CLICK);
-            openInBrowser(aboutQrUrl);
-        });
-        android.widget.LinearLayout.LayoutParams linkLp =
-                new android.widget.LinearLayout.LayoutParams(contentW, WRAP);
-        linkLp.topMargin = dp(12);
-        qr.addView(link, linkLp);
-
-        card.addView(list);
-        card.addView(qr);
-
-        FrameLayout.LayoutParams cardLp = new FrameLayout.LayoutParams(WRAP, WRAP);
-        cardLp.gravity = Gravity.CENTER;
-        card.setLayoutParams(cardLp);
-        ov.addView(card);
-        r.addView(ov);
-
-        aboutOverlay   = ov;
-        aboutCard      = card;
-        aboutListView  = list;
-        aboutQrView    = qr;
-        aboutQrImage   = qrImg;
-        aboutQrCaption = cap;
-        aboutQrLink    = link;
-    }
-
-    /** Build one About list row: optional leading icon + label, with a
-     *  rounded background that the selection paint fills. Full content width
-     *  so the selection pill spans the card. */
-    private android.widget.LinearLayout buildAboutRow(String label, View icon, int width) {
-        android.widget.LinearLayout row = new android.widget.LinearLayout(this);
-        row.setOrientation(android.widget.LinearLayout.HORIZONTAL);
-        row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setPadding(dp(12), dp(9), dp(14), dp(9));
-        android.graphics.drawable.GradientDrawable bg =
-                new android.graphics.drawable.GradientDrawable();
-        bg.setCornerRadius(dp(10));
-        bg.setColor(Color.TRANSPARENT);
-        row.setBackground(bg);
-        if (icon != null) {
-            android.widget.LinearLayout.LayoutParams ic =
-                    new android.widget.LinearLayout.LayoutParams(dp(22), dp(22));
-            ic.setMarginEnd(dp(10));
-            row.addView(icon, ic);
-        }
-        TextView tv = new TextView(this);
-        tv.setText(label);
-        tv.setTextColor(0xE6FFFFFF);
-        tv.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 14);
-        tv.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
-        tv.setSingleLine(true);
-        tv.setEllipsize(TextUtils.TruncateAt.END);
-        row.addView(tv, new android.widget.LinearLayout.LayoutParams(0, WRAP, 1f));
-
-        android.widget.LinearLayout.LayoutParams rlp =
-                new android.widget.LinearLayout.LayoutParams(width, WRAP);
-        rlp.topMargin = dp(2);
-        rlp.bottomMargin = dp(2);
-        row.setLayoutParams(rlp);
-        return row;
-    }
-
-    /** A small Ko-fi-style coffee cup, drawn into a bitmap (no asset). */
-    private View makeKofiIcon() {
-        ImageView iv = new ImageView(this);
-        iv.setImageBitmap(kofiCupBitmap(Math.max(1, dp(22)), 0xCCFFFFFF));   // white steam over the dark row
-        return iv;
-    }
-
-    /** Draw the Ko-fi coffee cup into an {@code s × s} bitmap. {@code steam}
-     *  is the steam-line colour so the cup reads on both the dark About row
-     *  (light steam) and the white QR centre plate (red steam). */
-    private Bitmap kofiCupBitmap(int s, int steam) {
-        Bitmap b = Bitmap.createBitmap(s, s, Bitmap.Config.ARGB_8888);
-        android.graphics.Canvas c = new android.graphics.Canvas(b);
-        Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
-        final int kofiRed = 0xFFFF5E5B;
-        // Cup body.
-        p.setStyle(Paint.Style.FILL);
-        p.setColor(kofiRed);
-        android.graphics.RectF body =
-                new android.graphics.RectF(s * 0.16f, s * 0.42f, s * 0.64f, s * 0.84f);
-        c.drawRoundRect(body, s * 0.07f, s * 0.07f, p);
-        // Handle.
-        p.setStyle(Paint.Style.STROKE);
-        p.setStrokeWidth(s * 0.08f);
-        android.graphics.RectF handle =
-                new android.graphics.RectF(s * 0.58f, s * 0.48f, s * 0.84f, s * 0.78f);
-        c.drawArc(handle, -70f, 140f, false, p);
-        // Steam.
-        p.setColor(steam);
-        p.setStrokeWidth(s * 0.05f);
-        p.setStrokeCap(Paint.Cap.ROUND);
-        c.drawLine(s * 0.30f, s * 0.34f, s * 0.30f, s * 0.14f, p);
-        c.drawLine(s * 0.46f, s * 0.34f, s * 0.46f, s * 0.14f, p);
-        return b;
-    }
-
-    /** Centre-logo bitmap for an About QR, or {@code null} (plain modern code)
-     *  when none is available. Ko-fi → the coffee cup; GitHub → the octicon
-     *  mark vector. Wrapped so a missing/garbled vector can never break the QR
-     *  — the code just renders without a logo. */
-    private Bitmap aboutQrLogo(int which) {
-        try {
-            int s = Math.max(1, dp(56));
-            if (which == ABOUT_ROW_KOFI) {
-                return kofiCupBitmap(s, 0xFFFF5E5B);   // red steam reads on the white plate
-            }
-            Drawable d = getDrawable(R.drawable.logo_github);
-            if (d == null) return null;
-            Bitmap b = Bitmap.createBitmap(s, s, Bitmap.Config.ARGB_8888);
-            android.graphics.Canvas c = new android.graphics.Canvas(b);
-            d.setBounds(0, 0, s, s);
-            d.draw(c);
-            return b;
-        } catch (Throwable ignored) {
-            return null;
-        }
-    }
-
-    private void showAboutOverlay() {
-        if (destroyed) return;
-        if (aboutOverlay == null) buildAboutOverlay();
-        final FrameLayout ov = aboutOverlay;
-        if (ov == null) return;
-        RingView rv = ringView; if (rv != null) rv.setVisibility(View.INVISIBLE);
-        ensureOverlayBackdropVisible();
-
-        aboutShowingQr = false;
-        aboutSelectedRow = 0;
-        if (aboutListView != null) aboutListView.setVisibility(View.VISIBLE);
-        if (aboutQrView != null) aboutQrView.setVisibility(View.GONE);
-        refreshAboutRows();
-
-        ov.setVisibility(View.VISIBLE);
-        ov.bringToFront();
-        ov.requestFocus();
-
-        final android.widget.LinearLayout card = aboutCard;
-        if (card != null) {
-            card.animate().cancel();
-            card.setAlpha(0f);
-            card.setScaleX(0.96f); card.setScaleY(0.92f);
-            card.post(() -> {
-                if (card != aboutCard) return;
-                card.setPivotX(card.getWidth() / 2f);
-                card.setPivotY(card.getHeight() / 2f);
-                card.animate()
-                        .alpha(1f).scaleX(1f).scaleY(1f)
-                        .setDuration(160).setInterpolator(MENU_IN).withLayer().start();
-            });
-        }
-    }
-
-    private void hideAboutOverlay() {
-        final FrameLayout ov = aboutOverlay;
-        if (ov == null) return;
-        final boolean returnToSettings = aboutOpenedFromSettings;
-        aboutOpenedFromSettings = false;
-        aboutShowingQr = false;
-        final android.widget.LinearLayout card = aboutCard;
-        final Runnable end = () -> {
-            if (ov != aboutOverlay) return;
-            ov.setVisibility(View.GONE);
-            if (returnToSettings) {
-                // Re-open the settings panel on the About row, mirroring the
-                // keymap → settings back-stack behaviour.
-                pendingSettingsCursor = SR_ABOUT;
-                showSettingsPanel();
-            } else {
-                dismissOverlayBackdropIfIdle();
-            }
-        };
-        if (card != null) {
-            card.animate().cancel();
-            card.animate()
-                    .alpha(0f).scaleX(0.96f).scaleY(0.92f)
-                    .setDuration(110).setInterpolator(MENU_OUT).withLayer()
-                    .withEndAction(end).start();
-        } else {
-            end.run();
-        }
-    }
-
-    /** Swap the list out for the QR view of the given row's link. */
-    private void showAboutQr(int which) {
-        String url = (which == ABOUT_ROW_KOFI) ? ABOUT_KOFI_URL : ABOUT_GITHUB_RELEASES;
-        aboutQrUrl = url;
-        // Modern rounded code with the matching brand mark centred. Falls back
-        // to a plain modern code if the logo can't be built; renderStyled keeps
-        // level-M error correction, which recovers the small centre plate.
-        Bitmap bmp = QrCode.renderStyled(url, dp(204), 0xFF101014, 0xFFFFFFFF,
-                aboutQrLogo(which), 0.22f);
-        if (aboutQrImage != null) aboutQrImage.setImageBitmap(bmp);
-        if (aboutQrCaption != null) {
-            aboutQrCaption.setText(which == ABOUT_ROW_KOFI
-                    ? R.string.about_qr_kofi_caption
-                    : R.string.about_qr_github_caption);
-        }
-        if (aboutQrLink != null) {
-            // Ko-fi shows the link without the "https://" scheme (cleaner, and
-            // a browser fills the scheme in anyway); GitHub shows the short
-            // "BareLauncher latest version" label. aboutQrUrl keeps the full
-            // URL for the actual open.
-            aboutQrLink.setText(which == ABOUT_ROW_KOFI
-                    ? url.replaceFirst("^https?://", "")
-                    : getString(R.string.about_github_link_button));
-        }
-        aboutShowingQr = true;
-        if (aboutListView != null) aboutListView.setVisibility(View.GONE);
-        if (aboutQrView != null) aboutQrView.setVisibility(View.VISIBLE);
-    }
-
-    /** Open {@code url} in whatever browser the user has installed. Offline,
-     *  dependency-free — a plain {@link Intent#ACTION_VIEW}. Guarded with a
-     *  resolve check so a TV box with no browser shows an honest toast
-     *  instead of throwing {@link android.content.ActivityNotFoundException}.
-     *  The launcher itself never handles {@code http(s)} VIEW intents (it has
-     *  no such filter), so this can never loop back into us. */
-    private void openInBrowser(String url) {
-        if (url == null || url.isEmpty()) return;
-        try {
-            Intent i = new Intent(Intent.ACTION_VIEW, Uri.parse(url))
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            if (i.resolveActivity(pm) != null) {
-                startActivity(i);
-                return;
-            }
-        } catch (Exception ignored) { /* fall through to the toast */ }
-        showToast(getString(R.string.toast_no_browser));
-    }
-
-    /** Return from the QR view back to the row list. */
-    private void showAboutList() {
-        aboutShowingQr = false;
-        if (aboutQrView != null) aboutQrView.setVisibility(View.GONE);
-        if (aboutListView != null) aboutListView.setVisibility(View.VISIBLE);
-        refreshAboutRows();
-    }
-
-    /** Paint the selected About row's pill + invert its text. */
-    private void refreshAboutRows() {
-        final int selBg = 0xFFEFEFEF, idleBg = Color.TRANSPARENT;
-        final int selTx = 0xFF111114, idleTx = 0xE6FFFFFF;
-        for (int i = 0; i < aboutRows.length; i++) {
-            android.widget.LinearLayout row = aboutRows[i];
-            if (row == null) continue;
-            boolean sel = (i == aboutSelectedRow);
-            android.graphics.drawable.Drawable bg = row.getBackground();
-            if (bg instanceof android.graphics.drawable.GradientDrawable) {
-                ((android.graphics.drawable.GradientDrawable) bg).setColor(sel ? selBg : idleBg);
-            }
-            for (int c = 0; c < row.getChildCount(); c++) {
-                View ch = row.getChildAt(c);
-                if (ch instanceof TextView) ((TextView) ch).setTextColor(sel ? selTx : idleTx);
-            }
-        }
-    }
-
-    /** D-pad / OK / Back handling for the About overlay. */
-    private boolean handleAboutKey(int kc) {
-        if (aboutShowingQr) {
-            switch (kc) {
-                // OK activates the link button → open in the user's browser.
-                case KeyEvent.KEYCODE_DPAD_CENTER:
-                case KeyEvent.KEYCODE_ENTER:
-                case KeyEvent.KEYCODE_BUTTON_A:
-                    openInBrowser(aboutQrUrl);
-                    return true;
-                // Back returns to the row list.
-                case KeyEvent.KEYCODE_BACK:
-                    showAboutList();
-                    return true;
-                default:
-                    // Swallow stray navigation/buttons so they can't bleed to
-                    // the surface underneath, but let device-control keys
-                    // (volume / mute / power / media) reach the platform — so
-                    // the DOWN edge stays balanced with the UP edge that
-                    // dispatchKeyEvent already lets through via isLetThroughKey.
-                    return !isLetThroughKey(kc);
-            }
-        }
-        switch (kc) {
-            case KeyEvent.KEYCODE_DPAD_UP:
-                aboutSelectedRow = (aboutSelectedRow + aboutRows.length - 1) % aboutRows.length;
-                refreshAboutRows();
-                return true;
-            case KeyEvent.KEYCODE_DPAD_DOWN:
-                aboutSelectedRow = (aboutSelectedRow + 1) % aboutRows.length;
-                refreshAboutRows();
-                return true;
-            case KeyEvent.KEYCODE_DPAD_CENTER:
-            case KeyEvent.KEYCODE_ENTER:
-            case KeyEvent.KEYCODE_BUTTON_A:
-                showAboutQr(aboutSelectedRow);
-                return true;
-            case KeyEvent.KEYCODE_BACK:
-                hideAboutOverlay();
-                return true;
-            default:
-                return false;
-        }
     }
 
     // ── Keymap configuration overlay ─────────────────────────────────────

@@ -496,8 +496,11 @@ android {
         // Bumped 50 → 51: 2.6.0 adds one-time local ADB setup that can
         // persistently select BareLauncher as Google TV's Home app.
         // SemVer MINOR — additive launcher-setup capability.
-        versionCode   = 51
-        versionName   = "2.6.0"
+        // Bumped 51 → 52: 2.6.1 reorganizes settings into a compact category
+        // hub, removes the About/QR surface, and refines the Orange focus color.
+        // SemVer PATCH — settings navigation and visual clarity refinement.
+        versionCode   = 52
+        versionName   = "2.6.1"
         resourceConfigurations += listOf("en")
 
         // Instrumentation test runner. Required so :app:connectedDebugAndroidTest
