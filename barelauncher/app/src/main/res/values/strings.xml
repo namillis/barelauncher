@@ -79,6 +79,10 @@
     <string name="settings_clock_off">Clock off</string>
     <string name="settings_row_layout_columns">Icons per row</string>
     <string name="settings_row_card_corner">Icon roundness</string>
+    <string name="settings_row_icon_pack">Icon pack</string>
+    <string name="settings_icon_pack_default">System default</string>
+    <!-- Cycling choice indicator; %1$s is the selected value. -->
+    <string name="settings_value_choice">&lt; %1$s &gt;</string>
     <string name="settings_row_focus_border">Focus border</string>
     <string name="settings_row_focus_color">Focus color</string>
     <string name="settings_value_columns">&lt; %1$d &gt;</string>
@@ -134,6 +138,7 @@
     <string name="toast_app_unavailable">App not available</string>
     <string name="toast_input_unavailable">Can\'t switch to this input</string>
     <string name="toast_no_file_picker">No file picker available</string>
+    <string name="toast_no_icon_packs">No icon packs installed. Sideload a Nova- or ADW-compatible pack first.</string>
     <string name="toast_wallpaper_load_failed">Could not load wallpaper</string>
     <string name="toast_wallpaper_no_permission">Could not get permission for this image</string>
     <!-- %1$s is the user-visible label of the customized app. -->
