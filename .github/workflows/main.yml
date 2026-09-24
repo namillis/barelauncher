@@ -4,9 +4,8 @@ on:
   # Triggers tuned for low CI runtime. We only run the workflow when
   # something actually needs validating end-to-end:
   #
-  # - pull_request: lightweight check (lint + unit tests). The full
-  #   instrumentation + signed build is skipped on PRs because they
-  #   have explicit job-level if-conditions further down — runs ~5 min.
+  # - pull_request: lint, unit tests, and emulator instrumentation on
+  #   API 26 and API 30. The signed build is skipped on PRs (no keystore).
   # - push of a tag matching v* : the actual release gate. Runs the
   #   full pipeline including emulator instrumentation and the
   #   release-publish job. Runs ~10-15 min depending on cold-boot.
@@ -150,11 +149,8 @@ jobs:
     runs-on: ubuntu-24.04
     needs: quality
     timeout-minutes: 35
-    # Skip on pull_request — emulator boot + smoke test costs ~10 min
-    # for both matrix rows, which is the bulk of PR CI time. The PR
-    # gate stays at lint + unit tests for fast feedback; the actual
-    # release gate (tag push) runs the full pipeline.
-    if: github.event_name != 'pull_request'
+    # Runs on pull requests too, so instrumentation failures block the
+    # merge instead of surfacing only at the release tag.
 
     strategy:
       fail-fast: false
