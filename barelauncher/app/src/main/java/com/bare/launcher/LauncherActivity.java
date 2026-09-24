@@ -2870,20 +2870,11 @@ public class LauncherActivity extends Activity {
         android.widget.LinearLayout menuCol = new android.widget.LinearLayout(this);
         menuCol.setOrientation(android.widget.LinearLayout.VERTICAL);
         menuCol.setGravity(Gravity.CENTER_HORIZONTAL);
-        // Dark glass plate matches the keymap card exactly: deep slate with a
-        // hairline rim. Dropping the previous opaque-black plate gives the
-        // app context menu the same visual vocabulary as the rest of the UI.
-        android.graphics.drawable.GradientDrawable menuBg =
-                new android.graphics.drawable.GradientDrawable();
-        menuBg.setColor(0xF21A1A1F);
-        menuBg.setCornerRadius(dp(12));
-        menuBg.setStroke(1, 0x1AFFFFFF);
-        menuCol.setBackground(menuBg);
-        // Small inner padding so each rounded item-pill is inset from the
-        // card edge — otherwise a square selection would visually clash
-        // with the card's rounded outer corner.
-        menuCol.setPadding(dp(4), dp(4), dp(4), dp(4));
-        menuCol.setElevation(dp(8));
+        // Shared edge-glass slate: rounded panel fill with a bright upper
+        // rim/sheen fading to a quiet lower edge, plus standard padding and
+        // elevation. Same primitive as the settings card, built by
+        // EdgeGlassStyle so the two surfaces cannot drift apart.
+        EdgeGlassStyle.applyPanel(menuCol, density);
 
         // Each menu item gets its OWN GradientDrawable as background so the
         // selected highlight is a rounded pill (not a flat rectangle, which
@@ -2891,7 +2882,7 @@ public class LauncherActivity extends Activity {
         // looked clipped against the card's rounded outer corner).
         // updateMenuHighlight just mutates the colour on these existing
         // drawables; the rounded shape is fixed at construction time.
-        final int itemRadius = dp(8);
+        final int itemRadius = EdgeGlassStyle.dp(density, EdgeGlassStyle.ROW_RADIUS_DP);
 
         menuHide = new TextView(this);
         menuHide.setText(R.string.menu_hide);
@@ -3036,31 +3027,41 @@ public class LauncherActivity extends Activity {
         // Dividers removed — the rounded-pill selection state is enough to
         // separate items visually, and removing them gives a cleaner
         // menu with no horizontal noise.
-        android.widget.LinearLayout.LayoutParams itemLp =
-                new android.widget.LinearLayout.LayoutParams(dp(140), WRAP);
-        itemLp.bottomMargin = dp(2);
+        //
+        // Adaptive width: each item fills the column (MATCH_PARENT) and the
+        // column wraps its widest label, floored at MENU_MIN_WIDTH_DP. This
+        // replaces the old hard dp(140) per-item width so a long localized
+        // label ("Change icon") is no longer clipped and a short menu is no
+        // longer padded with dead space. Screen-edge clamping happens in
+        // showContextMenu via measured width.
+        menuCol.setMinimumWidth(EdgeGlassStyle.dp(density, EdgeGlassStyle.MENU_MIN_WIDTH_DP));
+        final int rowGap = EdgeGlassStyle.dp(density, EdgeGlassStyle.ROW_GAP_DP);
+        final int MP = android.widget.LinearLayout.LayoutParams.MATCH_PARENT;
         android.widget.LinearLayout.LayoutParams itemLp0 =
-                new android.widget.LinearLayout.LayoutParams(dp(140), WRAP);
-        itemLp0.bottomMargin = dp(2);
+                new android.widget.LinearLayout.LayoutParams(MP, WRAP);
+        itemLp0.bottomMargin = rowGap;
         android.widget.LinearLayout.LayoutParams itemLpChange =
-                new android.widget.LinearLayout.LayoutParams(dp(140), WRAP);
-        itemLpChange.bottomMargin = dp(2);
+                new android.widget.LinearLayout.LayoutParams(MP, WRAP);
+        itemLpChange.bottomMargin = rowGap;
         android.widget.LinearLayout.LayoutParams itemLpReset =
-                new android.widget.LinearLayout.LayoutParams(dp(140), WRAP);
-        itemLpReset.bottomMargin = dp(2);
+                new android.widget.LinearLayout.LayoutParams(MP, WRAP);
+        itemLpReset.bottomMargin = rowGap;
         android.widget.LinearLayout.LayoutParams itemLpRename =
-                new android.widget.LinearLayout.LayoutParams(dp(140), WRAP);
-        itemLpRename.bottomMargin = dp(2);
+                new android.widget.LinearLayout.LayoutParams(MP, WRAP);
+        itemLpRename.bottomMargin = rowGap;
+        android.widget.LinearLayout.LayoutParams itemLp =
+                new android.widget.LinearLayout.LayoutParams(MP, WRAP);
+        itemLp.bottomMargin = rowGap;
         menuCol.addView(menuHide, itemLp0);
         menuCol.addView(menuChangeIcon, itemLpChange);
         menuCol.addView(menuResetIcon, itemLpReset);
         menuCol.addView(menuRename, itemLpRename);
         menuCol.addView(menuUninstall, itemLp);
         android.widget.LinearLayout.LayoutParams itemLp2 =
-                new android.widget.LinearLayout.LayoutParams(dp(140), WRAP);
-        itemLp2.bottomMargin = dp(2);
+                new android.widget.LinearLayout.LayoutParams(MP, WRAP);
+        itemLp2.bottomMargin = rowGap;
         menuCol.addView(menuAppInfo,   itemLp2);
-        menuCol.addView(menuMove,      new android.widget.LinearLayout.LayoutParams(dp(140), WRAP));
+        menuCol.addView(menuMove,      new android.widget.LinearLayout.LayoutParams(MP, WRAP));
 
         menuOverlay.addView(menuCol, new FrameLayout.LayoutParams(WRAP, WRAP));
         r.addView(menuOverlay);
@@ -3155,7 +3156,7 @@ public class LauncherActivity extends Activity {
             menuOverlay.animate()
                     .alpha(1f)
                     .scaleX(1f).scaleY(1f)
-                    .setDuration(130)
+                    .setDuration(150)
                     .setInterpolator(MENU_IN)
                     .withLayer()
                     .start();
@@ -3238,21 +3239,21 @@ public class LauncherActivity extends Activity {
         // Bright frosted-white pill for the selected item, mirroring the
         // toolbar buttons & keymap rows. The selected item's text inverts
         // to dark for contrast; Uninstall keeps its red identity.
-        final int hlWhite = 0xFFEFEFEF;
-        setMenuItemBg(menuHide,       sel == RecyclingShelfView.MENU_HIDE        ? hlWhite : Color.TRANSPARENT);
-        setMenuItemBg(menuChangeIcon, sel == RecyclingShelfView.MENU_CHANGE_ICON ? hlWhite : Color.TRANSPARENT);
-        setMenuItemBg(menuResetIcon,  sel == RecyclingShelfView.MENU_RESET_ICON  ? hlWhite : Color.TRANSPARENT);
-        setMenuItemBg(menuRename,     sel == RecyclingShelfView.MENU_RENAME      ? hlWhite : Color.TRANSPARENT);
-        setMenuItemBg(menuUninstall,  sel == RecyclingShelfView.MENU_UNINSTALL   ? hlWhite : Color.TRANSPARENT);
-        setMenuItemBg(menuAppInfo,    sel == RecyclingShelfView.MENU_APP_INFO    ? hlWhite : Color.TRANSPARENT);
-        setMenuItemBg(menuMove,       sel == RecyclingShelfView.MENU_MOVE        ? hlWhite : Color.TRANSPARENT);
-        menuHide      .setTextColor(sel == RecyclingShelfView.MENU_HIDE        ? 0xFF111114 : 0xCCFFFFFF);
-        menuChangeIcon.setTextColor(sel == RecyclingShelfView.MENU_CHANGE_ICON ? 0xFF111114 : 0xCCFFFFFF);
-        menuResetIcon .setTextColor(sel == RecyclingShelfView.MENU_RESET_ICON  ? 0xFF111114 : 0xCCFFFFFF);
-        menuRename    .setTextColor(sel == RecyclingShelfView.MENU_RENAME      ? 0xFF111114 : 0xCCFFFFFF);
-        menuUninstall .setTextColor(sel == RecyclingShelfView.MENU_UNINSTALL   ? 0xFFC0202A : 0xCCFF6B6B);
-        menuAppInfo   .setTextColor(sel == RecyclingShelfView.MENU_APP_INFO    ? 0xFF111114 : 0xCCFFFFFF);
-        menuMove      .setTextColor(sel == RecyclingShelfView.MENU_MOVE        ? 0xFF111114 : 0xCCFFFFFF);
+        final int hlWhite = EdgeGlassStyle.SELECTED_PILL;
+        setMenuItemBg(menuHide,       sel == RecyclingShelfView.MENU_HIDE        ? hlWhite : EdgeGlassStyle.ROW_IDLE_BG);
+        setMenuItemBg(menuChangeIcon, sel == RecyclingShelfView.MENU_CHANGE_ICON ? hlWhite : EdgeGlassStyle.ROW_IDLE_BG);
+        setMenuItemBg(menuResetIcon,  sel == RecyclingShelfView.MENU_RESET_ICON  ? hlWhite : EdgeGlassStyle.ROW_IDLE_BG);
+        setMenuItemBg(menuRename,     sel == RecyclingShelfView.MENU_RENAME      ? hlWhite : EdgeGlassStyle.ROW_IDLE_BG);
+        setMenuItemBg(menuUninstall,  sel == RecyclingShelfView.MENU_UNINSTALL   ? hlWhite : EdgeGlassStyle.ROW_IDLE_BG);
+        setMenuItemBg(menuAppInfo,    sel == RecyclingShelfView.MENU_APP_INFO    ? hlWhite : EdgeGlassStyle.ROW_IDLE_BG);
+        setMenuItemBg(menuMove,       sel == RecyclingShelfView.MENU_MOVE        ? hlWhite : EdgeGlassStyle.ROW_IDLE_BG);
+        menuHide      .setTextColor(sel == RecyclingShelfView.MENU_HIDE        ? EdgeGlassStyle.SELECTED_TEXT : 0xCCFFFFFF);
+        menuChangeIcon.setTextColor(sel == RecyclingShelfView.MENU_CHANGE_ICON ? EdgeGlassStyle.SELECTED_TEXT : 0xCCFFFFFF);
+        menuResetIcon .setTextColor(sel == RecyclingShelfView.MENU_RESET_ICON  ? EdgeGlassStyle.SELECTED_TEXT : 0xCCFFFFFF);
+        menuRename    .setTextColor(sel == RecyclingShelfView.MENU_RENAME      ? EdgeGlassStyle.SELECTED_TEXT : 0xCCFFFFFF);
+        menuUninstall .setTextColor(sel == RecyclingShelfView.MENU_UNINSTALL   ? EdgeGlassStyle.DESTRUCTIVE_SEL : EdgeGlassStyle.DESTRUCTIVE_IDLE);
+        menuAppInfo   .setTextColor(sel == RecyclingShelfView.MENU_APP_INFO    ? EdgeGlassStyle.SELECTED_TEXT : 0xCCFFFFFF);
+        menuMove      .setTextColor(sel == RecyclingShelfView.MENU_MOVE        ? EdgeGlassStyle.SELECTED_TEXT : 0xCCFFFFFF);
     }
 
     /** Updates the colour of an item's existing rounded GradientDrawable
@@ -3267,7 +3268,7 @@ public class LauncherActivity extends Activity {
         }
         android.graphics.drawable.GradientDrawable g =
                 new android.graphics.drawable.GradientDrawable();
-        g.setCornerRadius(dp(8));
+        g.setCornerRadius(EdgeGlassStyle.rowRadiusPx(density));
         g.setColor(color);
         tv.setBackground(g);
     }
@@ -7362,16 +7363,13 @@ public class LauncherActivity extends Activity {
         ov.setClickable(true);
         ov.setFocusable(true);
 
-        // Card — matches the keymap card's plate, rim, and corner radius.
+        // Card — shared edge-glass slate panel (same primitive as the per-app
+        // menu): rounded slate fill with a bright upper rim/sheen fading to a
+        // quiet lower edge, standard padding + elevation. Built by
+        // EdgeGlassStyle so the two surfaces stay visually identical.
         android.widget.LinearLayout card = new android.widget.LinearLayout(this);
         card.setOrientation(android.widget.LinearLayout.VERTICAL);
-        android.graphics.drawable.GradientDrawable cardBg =
-                new android.graphics.drawable.GradientDrawable();
-        cardBg.setColor(0xF21A1A1F);                          // deep slate
-        cardBg.setStroke(Math.max(1, dp(1) / 2), 0x1AFFFFFF); // 1 dp hairline rim
-        cardBg.setCornerRadius(dp(18));
-        card.setBackground(cardBg);
-        card.setPadding(dp(8), dp(7), dp(8), dp(7));
+        EdgeGlassStyle.applyPanel(card, density);
         card.setClipChildren(false);
         card.setClipToPadding(false);
 
@@ -7437,8 +7435,8 @@ public class LauncherActivity extends Activity {
             row.setMinimumWidth(dp(250));
             android.graphics.drawable.GradientDrawable rowBg =
                     new android.graphics.drawable.GradientDrawable();
-            rowBg.setCornerRadius(dp(9));
-            rowBg.setColor(Color.TRANSPARENT);
+            rowBg.setCornerRadius(EdgeGlassStyle.rowRadiusPx(density));
+            rowBg.setColor(EdgeGlassStyle.ROW_IDLE_BG);
             row.setBackground(rowBg);
 
             TextView label = new TextView(this);
@@ -7619,10 +7617,10 @@ public class LauncherActivity extends Activity {
     private void refreshSettingsRows() {
         android.widget.LinearLayout col = settingsColumn;
         if (col == null) return;
-        final int hlWhite = 0xFFEFEFEF;
-        final int idleBg  = Color.TRANSPARENT;
-        final int idleTx  = 0xCCFFFFFF;
-        final int selTx   = 0xFF111114;
+        final int hlWhite = EdgeGlassStyle.SELECTED_PILL;
+        final int idleBg  = EdgeGlassStyle.ROW_IDLE_BG;
+        final int idleTx  = EdgeGlassStyle.IDLE_TEXT;
+        final int selTx   = EdgeGlassStyle.SELECTED_TEXT;
         for (int i = 0; i < col.getChildCount(); i++) {
             View child = col.getChildAt(i);
             if (!(child instanceof android.widget.LinearLayout)) continue;
@@ -7657,14 +7655,14 @@ public class LauncherActivity extends Activity {
                     ind.setTextColor(sel ? selTx : 0x99FFFFFF);
                 } else if (rowId == SR_LAYOUT_COLUMNS) {
                     ind.setText(getString(R.string.settings_value_columns, layoutColumns));
-                    ind.setTextColor(sel ? selTx : 0xFF7DD3FC);
+                    ind.setTextColor(sel ? selTx : EdgeGlassStyle.VALUE_ACCENT);
                 } else if (rowId == SR_CARD_CORNER) {
                     ind.setText(getString(R.string.settings_value_percent, cardCornerPercent));
-                    ind.setTextColor(sel ? selTx : 0xFF7DD3FC);
+                    ind.setTextColor(sel ? selTx : EdgeGlassStyle.VALUE_ACCENT);
                 } else if (rowId == SR_FOCUS_BORDER) {
                     ind.setText(focusBorderEnabled ? "On" : "Off");
                     ind.setTextColor(focusBorderEnabled
-                            ? (sel ? selTx : 0xFF7DD3FC)
+                            ? (sel ? selTx : EdgeGlassStyle.VALUE_ACCENT)
                             : (sel ? 0x66111114 : 0x66FFFFFF));
                 } else if (rowId == SR_FOCUS_COLOR) {
                     ind.setText(getString(R.string.settings_value_focus_color,
@@ -7676,23 +7674,23 @@ public class LauncherActivity extends Activity {
                     ind.setText(clockMode == CLOCK_FULL ? "Full"
                               : clockMode == CLOCK_TIME_ONLY ? "Time" : "Off");
                     if (clockMode == CLOCK_OFF) ind.setTextColor(sel ? 0x66111114 : 0x66FFFFFF);
-                    else                        ind.setTextColor(sel ? selTx : 0xFF7DD3FC);
+                    else                        ind.setTextColor(sel ? selTx : EdgeGlassStyle.VALUE_ACCENT);
                 } else if (rowId == SR_SLIDESHOW_DURATION) {
                     ind.setText(slideshowDurationLabel());
                     boolean on = slideshowDurationSec != 0;
-                    ind.setTextColor(on ? (sel ? selTx : 0xFF7DD3FC) : (sel ? 0x66111114 : 0x66FFFFFF));
+                    ind.setTextColor(on ? (sel ? selTx : EdgeGlassStyle.VALUE_ACCENT) : (sel ? 0x66111114 : 0x66FFFFFF));
                 } else if (rowId == SR_SLIDESHOW_RESTART) {
                     ind.setText(slideshowRestart ? "On" : "Off");
-                    ind.setTextColor(slideshowRestart ? (sel ? selTx : 0xFF7DD3FC)
+                    ind.setTextColor(slideshowRestart ? (sel ? selTx : EdgeGlassStyle.VALUE_ACCENT)
                                                       : (sel ? 0x66111114 : 0x66FFFFFF));
                 } else if (rowId == SR_SLIDESHOW_FOLDER) {
                     boolean set = slideshowFolderUri != null;
                     ind.setText(set ? "Set" : "Not set");
-                    ind.setTextColor(set ? (sel ? selTx : 0xFF7DD3FC) : (sel ? 0x66111114 : 0x66FFFFFF));
+                    ind.setTextColor(set ? (sel ? selTx : EdgeGlassStyle.VALUE_ACCENT) : (sel ? 0x66111114 : 0x66FFFFFF));
                 } else if (rowId == SR_IDLE_HIDE) {
                     ind.setText(idleHideLabel());
                     boolean on = idleHideSec != 0;
-                    ind.setTextColor(on ? (sel ? selTx : 0xFF7DD3FC) : (sel ? 0x66111114 : 0x66FFFFFF));
+                    ind.setTextColor(on ? (sel ? selTx : EdgeGlassStyle.VALUE_ACCENT) : (sel ? 0x66111114 : 0x66FFFFFF));
                 } else if (rowId == SR_LAUNCHER_SETUP_MENU) {
                     GoogleTvSetup.State state = googleTvSetupStatus == null
                             ? GoogleTvSetup.State.NOT_CONFIGURED : googleTvSetupStatus.state;
@@ -7700,7 +7698,7 @@ public class LauncherActivity extends Activity {
                     ind.setText(getString(R.string.settings_value_open,
                             googleTvHomeStatusLabel()));
                     boolean ready = state == GoogleTvSetup.State.ACTIVE && !working;
-                    ind.setTextColor(ready ? (sel ? selTx : 0xFF7DD3FC)
+                    ind.setTextColor(ready ? (sel ? selTx : EdgeGlassStyle.VALUE_ACCENT)
                                            : (sel ? 0x66111114 : 0x99FFFFFF));
                 } else {
                     ind.setTextColor(sel ? selTx : idleTx);

@@ -7,6 +7,16 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+## [2.6.2] — 2026-09-24
+
+### Changed
+
+- **Settings and app-options menus now use an edge-glass slate style.** Both
+  menus share a dark slate panel with a subtle upper sheen and fading rim that
+  matches the favorites bar, a unified 14dp corner radius, consistent row
+  spacing, and a slightly smoother opening animation. The app-options menu now
+  sizes to its content. No additional live blur is used.
+
 ## [2.6.1] — 2026-09-22
 
 ### Changed
