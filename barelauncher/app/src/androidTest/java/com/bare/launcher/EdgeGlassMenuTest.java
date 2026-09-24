@@ -97,9 +97,9 @@ public class EdgeGlassMenuTest {
                             ViewGroup.LayoutParams.MATCH_PARENT, lp.width);
                     assertTrue("row " + i + " is not hard-pinned to 140dp",
                             lp.width != hard140);
-                    assertEquals("uniform inter-row gap",
-                            EdgeGlassStyle.dp(density, EdgeGlassStyle.ROW_GAP_DP),
-                            lp.bottomMargin);
+                    int expectedGap = i == col.getChildCount() - 1
+                            ? 0 : EdgeGlassStyle.dp(density, EdgeGlassStyle.ROW_GAP_DP);
+                    assertEquals("row " + i + " inter-row gap", expectedGap, lp.bottomMargin);
                 }
                 // The measured menu never collapses below the shared floor.
                 assertTrue("menu measured width respects the min floor",
