@@ -7,6 +7,15 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Added
+
+- **Icon packs.** Settings → Appearance → Icon pack applies an installed
+  Nova-, ADW-, Apex-, or GO-compatible pack to launcher tiles and shortcut
+  chips. BareLauncher matches the TV launch activity, then falls back to the
+  pack's phone mapping for the same app, so ordinary phone packs work on TV.
+  Unmapped apps keep their own artwork, per-app custom icons still take
+  priority, and removing the pack restores system icons automatically.
+
 ## [2.6.1] — 2026-09-22
 
 ### Changed

@@ -17,6 +17,7 @@ import java.util.Map;
  *   layout_columns\t6
  *   card_corner_percent\t20
  *   custom_names\t&lt;URL-safe encoded map&gt;
+ *   icon_pack\tcom.example.iconpack
  * </pre>
  * Line 1 is a magic + format-version header; every following line is a
  * {@code key\tvalue} pair. The wallpaper is deliberately NOT included — it is
@@ -59,13 +60,15 @@ final class SettingsBackup {
     static final String K_FOCUS_BORDER_ENABLED = "focus_border_enabled";
     static final String K_FOCUS_BORDER_COLOR = "focus_border_color";
     static final String K_CUSTOM_NAMES = "custom_names";
+    static final String K_ICON_PACK = "icon_pack";
 
     /** Build the backup file text. {@code null} string values are written as
      *  empty so every key is always present in a well-formed file. */
     static String serialize(String appOrder, int homeCount, String keyMap,
                             String hiddenApps, int clockMode, int layoutColumns,
                             int cardCornerPercent, boolean focusBorderEnabled,
-                            int focusBorderColor, String customNames) {
+                            int focusBorderColor, String customNames,
+                            String iconPack) {
         StringBuilder sb = new StringBuilder(320);
         sb.append(MAGIC).append('\t').append(VERSION).append('\n');
         line(sb, K_APP_ORDER,   appOrder);
@@ -78,6 +81,7 @@ final class SettingsBackup {
         line(sb, K_FOCUS_BORDER_ENABLED, focusBorderEnabled ? "1" : "0");
         line(sb, K_FOCUS_BORDER_COLOR, Integer.toString(focusBorderColor));
         line(sb, K_CUSTOM_NAMES, customNames);
+        line(sb, K_ICON_PACK, iconPack);
         return sb.toString();
     }
 

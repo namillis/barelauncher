@@ -144,6 +144,8 @@ public class LauncherActivity extends Activity {
     private static final String KEY_HIDDEN      = "hidden_apps";
     /** Encoded package/input identity → local display-name overrides. */
     private static final String KEY_CUSTOM_NAMES = "custom_names";
+    /** Package name of the selected ADW/Nova-style icon pack; absent = system icons. */
+    private static final String KEY_ICON_PACK = "icon_pack";
     /** Persisted "show clock" preference. true = clock pill rendered with
      *  a "EEE · h:mm a" date prefix (locale-aware short day-of-week);
      *  false = clock pill hidden entirely and no minute tick scheduled.
@@ -486,6 +488,18 @@ public class LauncherActivity extends Activity {
     /** Durable source images selected by the user. Unlike IconDiskCache,
      *  these are user data rather than a disposable rendering cache. */
     private volatile CustomIconStore customIconStore;
+    /** Active installed icon pack, opened in {@link #initCaches}; {@code null}
+     *  uses each app's own artwork. Changing it recreates the activity so
+     *  every cache starts from one consistent source. */
+    private volatile IconPack iconPack;
+    /** Pack chosen in Settings (may differ from the active one until the
+     *  Appearance page closes and the launcher recreates). */
+    private String iconPackPackage;
+    private String appliedIconPackPackage;
+    /** Installed packs for the Settings row; rebuilt each time the panel opens. */
+    private List<IconPack.Choice> iconPackChoices;
+    /** The active pack was updated or removed; recreate once the UI is visible. */
+    private boolean iconPackRecreatePending = false;
     /** Package and label awaiting the system image picker's result. */
     private String pendingCustomIconPackage;
     private String pendingCustomIconLabel;
@@ -903,12 +917,13 @@ public class LauncherActivity extends Activity {
     private static final int SR_LAUNCHER_RESTORE    = 21;
     private static final int SR_APPS_MENU            = 22; // → SPAGE_APPS
     private static final int SR_DEVICE_MENU          = 23; // → SPAGE_DEVICE
+    private static final int SR_ICON_PACK            = 24;
 
     private static final int[] SROWS_MAIN = {
             SR_APPEARANCE_MENU, SR_WALLPAPER_MENU, SR_APPS_MENU,
             SR_DEVICE_MENU, SR_SYSTEM };
     private static final int[] SROWS_APPEARANCE = {
-            SR_LAYOUT_COLUMNS, SR_CARD_CORNER, SR_FOCUS_BORDER,
+            SR_LAYOUT_COLUMNS, SR_CARD_CORNER, SR_ICON_PACK, SR_FOCUS_BORDER,
             SR_FOCUS_COLOR, SR_CLOCK };
     private static final int[] SROWS_WALLPAPER = {
             SR_SET_WALLPAPER, SR_SLIDESHOW_FOLDER, SR_SLIDESHOW_DURATION,
@@ -964,6 +979,7 @@ public class LauncherActivity extends Activity {
             case SR_DEVICE_MENU:        return R.string.settings_row_device_menu;
             case SR_LAYOUT_COLUMNS:     return R.string.settings_row_layout_columns;
             case SR_CARD_CORNER:        return R.string.settings_row_card_corner;
+            case SR_ICON_PACK:          return R.string.settings_row_icon_pack;
             case SR_FOCUS_BORDER:       return R.string.settings_row_focus_border;
             case SR_FOCUS_COLOR:        return R.string.settings_row_focus_color;
             case SR_WALLPAPER_MENU:     return R.string.settings_row_wallpaper_menu;
@@ -997,6 +1013,7 @@ public class LauncherActivity extends Activity {
         return rowId == SR_CLOCK
             || rowId == SR_LAYOUT_COLUMNS
             || rowId == SR_CARD_CORNER
+            || rowId == SR_ICON_PACK
             || rowId == SR_FOCUS_BORDER
             || rowId == SR_FOCUS_COLOR
             || rowId == SR_SLIDESHOW_FOLDER
@@ -1017,6 +1034,7 @@ public class LauncherActivity extends Activity {
         switch (rowId) {
             case SR_LAYOUT_COLUMNS:     return "< 7 >";
             case SR_CARD_CORNER:        return "< 30% >";
+            case SR_ICON_PACK:          return "< System default >";
             case SR_FOCUS_BORDER:       return "Off";
             case SR_FOCUS_COLOR:        return "< Magenta >";
             case SR_SLIDESHOW_FOLDER:   return "Not set";
@@ -1258,6 +1276,7 @@ public class LauncherActivity extends Activity {
                             if (store != null) store.delete(pkg);
                             if (customNames.remove(pkg) != null) saveCustomNames();
                         }
+                        noteIconPackPackageEvent(intent, action, pkg);
                     }
                 }
             }
@@ -1288,6 +1307,11 @@ public class LauncherActivity extends Activity {
             // against the resume animation and bounded by the existing
             // {@code appsLoading} guard.
             if (uiPaused) return;
+            if (iconPackRecreatePending && !destroyed) {
+                iconPackRecreatePending = false;
+                recreate();
+                return;
+            }
             RecyclingShelfView s = shelf;
             if (s == null) return;
             s.removeCallbacks(pkgReloadRunnable);
@@ -2078,6 +2102,13 @@ public class LauncherActivity extends Activity {
         // of falling into the paused-skip path. See {@link #uiPaused}
         // for the full rationale.
         uiPaused = false;
+        // The active icon pack changed while we were away: rebuild before
+        // scheduling any resume work on an activity about to be replaced.
+        if (iconPackRecreatePending && !destroyed) {
+            iconPackRecreatePending = false;
+            recreate();
+            return;
+        }
         hideSystemUI();
         startClock();
         registerTimeReceiver();
@@ -7576,6 +7607,8 @@ public class LauncherActivity extends Activity {
         if (ov == null) return;
         final boolean applyLayout = layoutApplyPending;
         if (applyLayout) layoutApplyPending = false;
+        // Rediscover packs next time so newly sideloaded ones appear.
+        iconPackChoices = null;
         if (card != null) {
             card.animate().cancel();
             card.animate()
@@ -7661,6 +7694,11 @@ public class LauncherActivity extends Activity {
                 } else if (rowId == SR_CARD_CORNER) {
                     ind.setText(getString(R.string.settings_value_percent, cardCornerPercent));
                     ind.setTextColor(sel ? selTx : 0xFF7DD3FC);
+                } else if (rowId == SR_ICON_PACK) {
+                    ind.setText(getString(R.string.settings_value_choice, iconPackLabel()));
+                    ind.setTextColor(iconPackPackage != null
+                            ? (sel ? selTx : 0xFF7DD3FC)
+                            : (sel ? 0x99111114 : 0x99FFFFFF));
                 } else if (rowId == SR_FOCUS_BORDER) {
                     ind.setText(focusBorderEnabled ? "On" : "Off");
                     ind.setTextColor(focusBorderEnabled
@@ -7734,6 +7772,7 @@ public class LauncherActivity extends Activity {
                 int rowId = currentSettingsRowId();
                 if (rowId == SR_LAYOUT_COLUMNS) stepLayoutColumns(-1);
                 else if (rowId == SR_CARD_CORNER) stepCardCorner(-1);
+                else if (rowId == SR_ICON_PACK) stepIconPack(-1);
                 else if (rowId == SR_FOCUS_BORDER) toggleFocusBorder();
                 else if (rowId == SR_FOCUS_COLOR) stepFocusColor(-1);
                 else if (rowId == SR_SLIDESHOW_DURATION) stepSlideshowDuration(-1);
@@ -7743,6 +7782,7 @@ public class LauncherActivity extends Activity {
                 rowId = currentSettingsRowId();
                 if (rowId == SR_LAYOUT_COLUMNS) stepLayoutColumns(+1);
                 else if (rowId == SR_CARD_CORNER) stepCardCorner(+1);
+                else if (rowId == SR_ICON_PACK) stepIconPack(+1);
                 else if (rowId == SR_FOCUS_BORDER) toggleFocusBorder();
                 else if (rowId == SR_FOCUS_COLOR) stepFocusColor(+1);
                 else if (rowId == SR_SLIDESHOW_DURATION) stepSlideshowDuration(+1);
@@ -7837,6 +7877,9 @@ public class LauncherActivity extends Activity {
                 break;
             case SR_CARD_CORNER:
                 stepCardCorner(+1);
+                break;
+            case SR_ICON_PACK:
+                stepIconPack(+1);
                 break;
             case SR_FOCUS_BORDER:
                 toggleFocusBorder();
@@ -8025,7 +8068,69 @@ public class LauncherActivity extends Activity {
         layoutApplyPending = layoutColumns != appliedLayoutColumns
                 || cardCornerPercent != appliedCardCornerPercent
                 || focusBorderEnabled != appliedFocusBorderEnabled
-                || focusBorderColor != appliedFocusBorderColor;
+                || focusBorderColor != appliedFocusBorderColor
+                || !java.util.Objects.equals(iconPackPackage, appliedIconPackPackage);
+    }
+
+    // ── Icon packs ───────────────────────────────────────────────────────
+
+    /** Installed icon packs for the Settings row, discovered once per panel open. */
+    private List<IconPack.Choice> iconPackChoices() {
+        List<IconPack.Choice> choices = iconPackChoices;
+        if (choices == null) {
+            choices = IconPack.discover(pm, getPackageName());
+            iconPackChoices = choices;
+        }
+        return choices;
+    }
+
+    /** Settings label for the chosen pack, shortened to fit the indicator. */
+    private String iconPackLabel() {
+        String pkg = iconPackPackage;
+        if (pkg == null) return getString(R.string.settings_icon_pack_default);
+        String label = pkg;
+        for (IconPack.Choice c : iconPackChoices()) {
+            if (c.packageName.equals(pkg)) { label = c.label; break; }
+        }
+        // The indicator reserves room for "< System default >" (14 chars).
+        return label.length() > 14 ? label.substring(0, 13) + "…" : label;
+    }
+
+    /** Cycle System default → installed packs. Applied when the panel closes. */
+    private void stepIconPack(int direction) {
+        List<IconPack.Choice> choices = iconPackChoices();
+        if (choices.isEmpty()) {
+            showToast(getString(R.string.toast_no_icon_packs));
+            return;
+        }
+        int count = choices.size() + 1;   // slot 0 = System default
+        int current = 0;
+        for (int i = 0; i < choices.size(); i++) {
+            if (choices.get(i).packageName.equals(iconPackPackage)) { current = i + 1; break; }
+        }
+        int next = ((current + direction) % count + count) % count;
+        iconPackPackage = next == 0 ? null : choices.get(next - 1).packageName;
+        if (iconPackPackage == null) prefs.edit().remove(KEY_ICON_PACK).apply();
+        else prefs.edit().putString(KEY_ICON_PACK, iconPackPackage).apply();
+        updateLayoutApplyPending();
+        refreshSettingsRows();
+    }
+
+    /**
+     * The active pack was updated, changed, or uninstalled. Recreate so its
+     * new version (or the system icons) replaces every cached tile. The
+     * REMOVED half of an update is ignored; the following REPLACED handles it.
+     */
+    private void noteIconPackPackageEvent(Intent intent, String action, String pkg) {
+        IconPack pack = iconPack;
+        if (pack == null || !pack.packageName.equals(pkg)) return;
+        boolean removed = Intent.ACTION_PACKAGE_REMOVED.equals(action);
+        boolean replacing = intent.getBooleanExtra(Intent.EXTRA_REPLACING, false);
+        if (removed && replacing) return;
+        if (removed && pkg.equals(prefs.getString(KEY_ICON_PACK, null))) {
+            prefs.edit().remove(KEY_ICON_PACK).apply();
+        }
+        iconPackRecreatePending = true;
     }
 
     // ── Keymap configuration overlay ─────────────────────────────────────
@@ -9613,14 +9718,36 @@ public class LauncherActivity extends Activity {
                 }
             }
         }
+        IconPack pack = iconPack;
+        String variant = pack != null ? pack.cacheVariant : null;
         if (dc != null) {
-            Bitmap fromDisk = dc.tryRead(app.packageName, iconPx);
+            Bitmap fromDisk = dc.tryRead(app.packageName, iconPx, variant);
             if (fromDisk != null) return fromDisk;
         }
-        Drawable d = resolveIconDrawable(app);
-        Bitmap fresh = (d != null) ? IconRenderer.process(d, iconPx) : null;
-        if (fresh != null && dc != null) dc.writeAsync(app.packageName, iconPx, fresh);
+        Bitmap fresh = null;
+        Bitmap packArt = loadIconPackArtwork(app);
+        if (packArt != null) {
+            try {
+                fresh = IconRenderer.processCustomIcon(packArt, iconPx);
+            } finally {
+                if (!packArt.isRecycled()) packArt.recycle();
+            }
+        }
+        if (fresh == null) {
+            Drawable d = resolveIconDrawable(app);
+            fresh = (d != null) ? IconRenderer.process(d, iconPx) : null;
+        }
+        if (fresh != null && dc != null) dc.writeAsync(app.packageName, iconPx, variant, fresh);
         return fresh;
+    }
+
+    /** Selected icon pack's artwork for an app, or {@code null} when no pack
+     *  is active, the app is a TV input, or the pack has no safe mapping.
+     *  Caller owns (and recycles) the returned bitmap. Worker thread only. */
+    private Bitmap loadIconPackArtwork(AppInfo app) {
+        IconPack pack = iconPack;
+        if (pack == null || app == null || app.tvInputId != null) return null;
+        return pack.loadArtwork(app.packageName, app.component);
     }
 
     /**
@@ -9752,6 +9879,17 @@ public class LauncherActivity extends Activity {
         // TV-input tile without a user override: generated glyph + label.
         if (app.tvInputId != null) {
             return IconRenderer.generateInputTile(w, h, corner, app.label, density);
+        }
+        // An icon pack replaces the app's banner with the pack artwork so
+        // themed apps look consistent. Unmapped apps keep their own banner.
+        Bitmap packArt = loadIconPackArtwork(app);
+        if (packArt != null) {
+            try {
+                Bitmap tile = IconRenderer.generateCustomTile(packArt, w, h, corner);
+                if (tile != null) return tile;
+            } finally {
+                if (!packArt.isRecycled()) packArt.recycle();
+            }
         }
         Drawable banner = resolveBannerDrawable(app);
         if (banner != null) {
@@ -10307,7 +10445,8 @@ public class LauncherActivity extends Activity {
                 cardCornerPercent,
                 focusBorderEnabled,
                 focusBorderColor,
-                prefs.getString(KEY_CUSTOM_NAMES, ""));
+                prefs.getString(KEY_CUSTOM_NAMES, ""),
+                prefs.getString(KEY_ICON_PACK, ""));
         try (java.io.OutputStream os = getContentResolver().openOutputStream(uri, "w")) {
             if (os == null) { showToast(getString(R.string.toast_backup_failed)); return; }
             os.write(text.getBytes(java.nio.charset.StandardCharsets.UTF_8));
@@ -10392,6 +10531,21 @@ public class LauncherActivity extends Activity {
         if (p.has(SettingsBackup.K_FOCUS_BORDER_COLOR)) {
             ed.putInt(KEY_FOCUS_BORDER_COLOR, restoredFocusColor);
         }
+        // Icon pack: an empty value restores system icons; a pack that is
+        // not installed on this device is skipped like any other package.
+        boolean applyIconPack = false;
+        if (p.has(SettingsBackup.K_ICON_PACK)) {
+            String restoredPack = p.str(SettingsBackup.K_ICON_PACK);
+            if (restoredPack == null || restoredPack.trim().isEmpty()) restoredPack = null;
+            else restoredPack = restoredPack.trim();
+            boolean usable = restoredPack == null || IconPack.open(pm, restoredPack) != null;
+            if (usable) {
+                if (restoredPack == null) ed.remove(KEY_ICON_PACK);
+                else ed.putString(KEY_ICON_PACK, restoredPack);
+                iconPackPackage = restoredPack;
+                applyIconPack = !java.util.Objects.equals(restoredPack, appliedIconPackPackage);
+            }
+        }
         ed.apply();
         if (p.has(SettingsBackup.K_LAYOUT_COLUMNS)) layoutColumns = restoredColumns;
         if (p.has(SettingsBackup.K_CARD_CORNER_PERCENT)) cardCornerPercent = restoredCorner;
@@ -10443,7 +10597,7 @@ public class LauncherActivity extends Activity {
             }
         }
         showToast(getString(R.string.toast_restore_done));
-        if (applyLayout && !destroyed) recreate();
+        if ((applyLayout || applyIconPack) && !destroyed) recreate();
     }
 
     // ── Wallpaper slideshow engine ───────────────────────────────────────
@@ -11400,10 +11554,24 @@ public class LauncherActivity extends Activity {
         // User-selected icon sources. Construct before either rendering cache
         // so every worker sees custom artwork from its first lookup.
         customIconStore = new CustomIconStore(this);
+        // Selected icon pack. Opening it is one PackageManager lookup; the
+        // appfilter is parsed lazily on an icon worker only after a disk miss.
+        // A pack uninstalled while the launcher was not running reverts to
+        // system icons.
+        String packPkg = prefs.getString(KEY_ICON_PACK, null);
+        IconPack pack = packPkg != null ? IconPack.open(pm, packPkg) : null;
+        if (packPkg != null && pack == null) {
+            prefs.edit().remove(KEY_ICON_PACK).apply();
+            packPkg = null;
+        }
+        iconPack = pack;
+        iconPackPackage = packPkg;
+        appliedIconPackPackage = packPkg;
         // The on-disk icon cache. Constructed BEFORE iconCache so the
         // icon-load executor tasks can read from / write to it. Owns
-        // its own write executor; shut down in onDestroy().
-        iconDiskCache = new IconDiskCache(this);
+        // its own write executor; shut down in onDestroy(). Entries for
+        // other icon-pack versions are swept in the background.
+        iconDiskCache = new IconDiskCache(this, pack != null ? pack.cacheVariant : null);
         // The in-memory icon cache. Pure LRU, no create() fallback —
         // the disk lookup is performed inside {@link #loadIconBlocking}
         // on the iconExecutor's worker thread. Earlier drafts wired the

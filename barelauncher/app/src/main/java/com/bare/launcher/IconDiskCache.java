@@ -136,6 +136,9 @@ final class IconDiskCache {
     private static final int    QUEUE_CAP   = 64;
 
     private final File                 dir;
+    /** Icon-pack cache namespace to keep, or {@code null} for none. Files
+     *  written for any other pack variant are swept on construct. */
+    private final String               keepVariant;
     private final ThreadPoolExecutor   writeExecutor;
     private volatile boolean           shuttingDown = false;
 
@@ -147,7 +150,18 @@ final class IconDiskCache {
      *                   functionally.
      */
     IconDiskCache(Context appContext) {
+        this(appContext, null);
+    }
+
+    /**
+     * @param keepVariant the active icon pack's {@link IconPack#cacheVariant},
+     *                    or {@code null} when no pack is selected. Default
+     *                    (pack-free) entries are always retained so turning
+     *                    a pack off stays instant.
+     */
+    IconDiskCache(Context appContext, String keepVariant) {
         this.dir = new File(appContext.getFilesDir(), DIR_NAME);
+        this.keepVariant = isVariant(keepVariant) ? keepVariant : null;
         // Best-effort mkdir. On the rare ROM where the call fails the
         // cache becomes inert (every read misses, every write skips on
         // the parent-directory absence) — same observable behaviour as
@@ -202,8 +216,13 @@ final class IconDiskCache {
      *                resolution icon after a DPI change.
      */
     Bitmap tryRead(String pkg, int iconPx) {
+        return tryRead(pkg, iconPx, null);
+    }
+
+    /** {@link #tryRead(String, int)} within an icon-pack namespace. */
+    Bitmap tryRead(String pkg, int iconPx, String variant) {
         if (pkg == null || pkg.isEmpty() || iconPx <= 0 || shuttingDown) return null;
-        File f = fileFor(pkg, iconPx);
+        File f = fileFor(pkg, iconPx, variant);
         if (!f.exists() || f.length() == 0) return null;
         Bitmap bmp = null;
         try (FileInputStream fis = new FileInputStream(f)) {
@@ -251,6 +270,11 @@ final class IconDiskCache {
      * entry intact (or no entry, on first write).
      */
     void writeAsync(String pkg, int iconPx, Bitmap bmp) {
+        writeAsync(pkg, iconPx, null, bmp);
+    }
+
+    /** {@link #writeAsync(String, int, Bitmap)} within an icon-pack namespace. */
+    void writeAsync(String pkg, int iconPx, String variant, Bitmap bmp) {
         if (pkg == null || pkg.isEmpty() || iconPx <= 0 || shuttingDown) return;
         if (bmp == null || bmp.isRecycled()) return;
         if (bmp.getConfig() == Bitmap.Config.HARDWARE) return;
@@ -261,7 +285,7 @@ final class IconDiskCache {
         // we'll detect it via isRecycled() and bail.
         final Bitmap captured = bmp;
         try {
-            writeExecutor.execute(() -> writeSync(pkg, iconPx, captured));
+            writeExecutor.execute(() -> writeSync(pkg, iconPx, variant, captured));
         } catch (RejectedExecutionException ignored) {
             // Executor refused (closed or full + DiscardOldest dropping
             // the new task instead of the old one is impossible per
@@ -271,10 +295,10 @@ final class IconDiskCache {
     }
 
     /** Worker-thread implementation of {@link #writeAsync}. */
-    private void writeSync(String pkg, int iconPx, Bitmap bmp) {
+    private void writeSync(String pkg, int iconPx, String variant, Bitmap bmp) {
         if (shuttingDown || bmp == null || bmp.isRecycled()) return;
-        File tmp  = tmpFileFor(pkg, iconPx);
-        File dest = fileFor(pkg, iconPx);
+        File tmp  = tmpFileFor(pkg, iconPx, variant);
+        File dest = fileFor(pkg, iconPx, variant);
         // Defensive parent-dir mkdir in case Android cleared filesDir
         // between construct and now (rare, but possible if the user
         // did "Clear app data" while the launcher was paused).
@@ -414,14 +438,45 @@ final class IconDiskCache {
         }
     }
 
-    /** Path for a single package's cache file at the given pixel size. */
-    private File fileFor(String pkg, int iconPx) {
-        return new File(dir, pkg + "-" + iconPx + EXT);
+    /** Path for a single package's cache file at the given pixel size.
+     *  Pack-rendered icons append {@code -variant}; Android package names
+     *  never contain {@code -}, so the fields stay unambiguous. */
+    private File fileFor(String pkg, int iconPx, String variant) {
+        return new File(dir, baseName(pkg, iconPx, variant) + EXT);
     }
 
     /** Path for the tmp file used during atomic writes. */
-    private File tmpFileFor(String pkg, int iconPx) {
-        return new File(dir, pkg + "-" + iconPx + TMP_EXT);
+    private File tmpFileFor(String pkg, int iconPx, String variant) {
+        return new File(dir, baseName(pkg, iconPx, variant) + TMP_EXT);
+    }
+
+    private static String baseName(String pkg, int iconPx, String variant) {
+        String base = pkg + "-" + iconPx;
+        return isVariant(variant) ? base + "-" + variant : base;
+    }
+
+    /** Variants are generated by {@link IconPackMap#cacheVariant}: {@code [a-z0-9]+}. */
+    static boolean isVariant(String variant) {
+        if (variant == null || variant.isEmpty() || variant.length() > 32) return false;
+        for (int i = 0; i < variant.length(); i++) {
+            char c = variant.charAt(i);
+            if (!((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9'))) return false;
+        }
+        return true;
+    }
+
+    /**
+     * Pack variant embedded in a cache file name, or {@code null} for a
+     * default entry or an unrecognised name.
+     */
+    static String variantOf(String fileName) {
+        if (fileName == null) return null;
+        String stem;
+        if (fileName.endsWith(TMP_EXT)) stem = fileName.substring(0, fileName.length() - TMP_EXT.length());
+        else if (fileName.endsWith(EXT)) stem = fileName.substring(0, fileName.length() - EXT.length());
+        else return null;
+        String[] parts = stem.split("-", -1);
+        return parts.length == 3 && isVariant(parts[2]) ? parts[2] : null;
     }
 
     /**
@@ -446,7 +501,9 @@ final class IconDiskCache {
         if (files == null) return;
         for (File f : files) {
             String n = f.getName();
-            if (n.endsWith(LEGACY_EXT) || n.endsWith(LEGACY_TMP_EXT)) {
+            String variant = variantOf(n);
+            boolean stalePack = variant != null && !variant.equals(keepVariant);
+            if (n.endsWith(LEGACY_EXT) || n.endsWith(LEGACY_TMP_EXT) || stalePack) {
                 //noinspection ResultOfMethodCallIgnored
                 f.delete();
             }

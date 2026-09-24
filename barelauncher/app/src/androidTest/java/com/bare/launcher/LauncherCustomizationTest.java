@@ -296,7 +296,7 @@ public class LauncherCustomizationTest {
             awaitValue(scenario, "Appearance settings rows", activity -> {
                 android.widget.LinearLayout column = (android.widget.LinearLayout)
                         field(activity, "settingsColumn");
-                return column != null && column.getChildCount() == 5 ? column : null;
+                return column != null && column.getChildCount() == 6 ? column : null;
             });
 
             scenario.onActivity(activity -> {
@@ -309,7 +309,7 @@ public class LauncherCustomizationTest {
                     scenario, "updated Layout settings", activity -> {
                         android.widget.LinearLayout current = (android.widget.LinearLayout)
                                 field(activity, "settingsColumn");
-                        if (current == null || current.getChildCount() != 5) return null;
+                        if (current == null || current.getChildCount() != 6) return null;
                         String columnsText = ((android.widget.TextView)
                                 ((ViewGroup) current.getChildAt(0)).getChildAt(1))
                                 .getText().toString();
@@ -332,7 +332,7 @@ public class LauncherCustomizationTest {
                 assertEquals(activity.getString(R.string.settings_hint_adjust),
                         ((android.widget.TextView) field(activity, "settingsHintView"))
                                 .getText().toString());
-                assertEquals(5, column.getChildCount());
+                assertEquals(6, column.getChildCount());
                 assertEquals(activity.getString(R.string.settings_row_layout_columns),
                         ((android.widget.TextView) ((ViewGroup) column.getChildAt(0))
                                 .getChildAt(0)).getText().toString());
@@ -340,10 +340,13 @@ public class LauncherCustomizationTest {
                         ((ViewGroup) column.getChildAt(0)).getChildAt(1)).getText().toString());
                 assertEquals("< 18% >", ((android.widget.TextView)
                         ((ViewGroup) column.getChildAt(1)).getChildAt(1)).getText().toString());
+                assertEquals(activity.getString(R.string.settings_row_icon_pack),
+                        ((android.widget.TextView) ((ViewGroup) column.getChildAt(2))
+                                .getChildAt(0)).getText().toString());
                 assertEquals("Off", ((android.widget.TextView)
-                        ((ViewGroup) column.getChildAt(2)).getChildAt(1)).getText().toString());
-                assertEquals("< Cyan >", ((android.widget.TextView)
                         ((ViewGroup) column.getChildAt(3)).getChildAt(1)).getText().toString());
+                assertEquals("< Cyan >", ((android.widget.TextView)
+                        ((ViewGroup) column.getChildAt(4)).getChildAt(1)).getText().toString());
                 assertEquals(5, preferences.getInt(columnsKey, -1));
                 assertEquals(18, preferences.getInt(cornerKey, -1));
                 assertEquals(false, preferences.getBoolean(borderKey, true));
