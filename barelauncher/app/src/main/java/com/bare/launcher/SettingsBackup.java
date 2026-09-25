@@ -18,6 +18,7 @@ import java.util.Map;
  *   card_corner_percent\t20
  *   custom_names\t&lt;URL-safe encoded map&gt;
  *   icon_pack\tcom.example.iconpack
+ *   icon_pack_choices\tcom.example.iconpack/com.app=app_alt
  * </pre>
  * Line 1 is a magic + format-version header; every following line is a
  * {@code key\tvalue} pair. The wallpaper is deliberately NOT included — it is
@@ -61,6 +62,7 @@ final class SettingsBackup {
     static final String K_FOCUS_BORDER_COLOR = "focus_border_color";
     static final String K_CUSTOM_NAMES = "custom_names";
     static final String K_ICON_PACK = "icon_pack";
+    static final String K_ICON_PACK_CHOICES = "icon_pack_choices";
 
     /** Build the backup file text. {@code null} string values are written as
      *  empty so every key is always present in a well-formed file. */
@@ -68,7 +70,7 @@ final class SettingsBackup {
                             String hiddenApps, int clockMode, int layoutColumns,
                             int cardCornerPercent, boolean focusBorderEnabled,
                             int focusBorderColor, String customNames,
-                            String iconPack) {
+                            String iconPack, String iconPackChoices) {
         StringBuilder sb = new StringBuilder(320);
         sb.append(MAGIC).append('\t').append(VERSION).append('\n');
         line(sb, K_APP_ORDER,   appOrder);
@@ -82,6 +84,7 @@ final class SettingsBackup {
         line(sb, K_FOCUS_BORDER_COLOR, Integer.toString(focusBorderColor));
         line(sb, K_CUSTOM_NAMES, customNames);
         line(sb, K_ICON_PACK, iconPack);
+        line(sb, K_ICON_PACK_CHOICES, iconPackChoices);
         return sb.toString();
     }
 

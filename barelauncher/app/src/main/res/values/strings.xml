@@ -139,6 +139,20 @@
     <string name="toast_input_unavailable">Can\'t switch to this input</string>
     <string name="toast_no_file_picker">No file picker available</string>
     <string name="toast_no_icon_packs">No icon packs installed. Sideload a Nova- or ADW-compatible pack first.</string>
+    <!-- Change-icon source chooser, shown when an icon pack is active.
+         %1$s is the app label; icon_source_pack's %1$s is the pack name. -->
+    <string name="icon_source_title">Change icon for %1$s</string>
+    <string name="icon_source_pack">Pick from %1$s</string>
+    <string name="icon_source_image">Choose image file</string>
+    <!-- Searchable icon-pack picker. %1$s is the app label. -->
+    <string name="pack_picker_title">Choose icon for %1$s</string>
+    <string name="pack_picker_search_hint">Search icons</string>
+    <string name="pack_picker_loading">Loading icons…</string>
+    <!-- %1$d icons shown out of %2$d in the pack. -->
+    <string name="pack_picker_count">Top matches: %1$d · Pack icons: %2$d · ↑ to search</string>
+    <string name="pack_picker_no_results">No matching icons. Press ↑ and try a shorter search.</string>
+    <string name="pack_picker_no_catalog">This icon pack doesn\'t list its icons.</string>
+    <string name="toast_pack_icon_failed">That icon couldn\'t be loaded</string>
     <string name="toast_wallpaper_load_failed">Could not load wallpaper</string>
     <string name="toast_wallpaper_no_permission">Could not get permission for this image</string>
     <!-- %1$s is the user-visible label of the customized app. -->

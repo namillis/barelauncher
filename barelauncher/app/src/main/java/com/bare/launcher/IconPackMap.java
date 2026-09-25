@@ -50,6 +50,11 @@ final class IconPackMap {
     /** Number of distinct component mappings. */
     int size() { return byComponent.size(); }
 
+    /** Distinct drawable names the mappings use, in first-seen order. */
+    java.util.List<String> drawableNames() {
+        return new java.util.ArrayList<>(new java.util.LinkedHashSet<>(byComponent.values()));
+    }
+
     /** Parse the pack's appfilter events; malformed items are skipped. */
     static IconPackMap parse(TagSource source) throws Exception {
         IconPackMap map = new IconPackMap();

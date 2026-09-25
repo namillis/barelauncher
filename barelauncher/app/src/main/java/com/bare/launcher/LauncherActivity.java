@@ -69,8 +69,10 @@ import android.widget.Toast;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
@@ -146,6 +148,8 @@ public class LauncherActivity extends Activity {
     private static final String KEY_CUSTOM_NAMES = "custom_names";
     /** Package name of the selected ADW/Nova-style icon pack; absent = system icons. */
     private static final String KEY_ICON_PACK = "icon_pack";
+    /** Icons picked by hand from a pack, see {@link IconPackChoices}. */
+    private static final String KEY_ICON_PACK_CHOICES = "icon_pack_choices";
     /** Persisted "show clock" preference. true = clock pill rendered with
      *  a "EEE · h:mm a" date prefix (locale-aware short day-of-week);
      *  false = clock pill hidden entirely and no minute tick scheduled.
@@ -500,6 +504,14 @@ public class LauncherActivity extends Activity {
     private List<IconPack.Choice> iconPackChoices;
     /** The active pack was updated or removed; recreate once the UI is visible. */
     private boolean iconPackRecreatePending = false;
+    /** Icons picked by hand from a pack. Internally synchronized; read by icon workers. */
+    private volatile IconPackChoices iconChoices = new IconPackChoices();
+    /** Per-app counter bumped when a hand-picked icon changes, so an in-flight
+     *  decode of the previous artwork is discarded (see {@link #customIconSourceVersion}). */
+    private final java.util.concurrent.ConcurrentHashMap<String, Long> iconChoiceVersions =
+            new java.util.concurrent.ConcurrentHashMap<>();
+    /** Open "choose from icon pack" dialog, if any. */
+    private AlertDialog packIconDialog;
     /** Package and label awaiting the system image picker's result. */
     private String pendingCustomIconPackage;
     private String pendingCustomIconLabel;
@@ -1275,6 +1287,12 @@ public class LauncherActivity extends Activity {
                             CustomIconStore store = customIconStore;
                             if (store != null) store.delete(pkg);
                             if (customNames.remove(pkg) != null) saveCustomNames();
+                            // Drop hand-picked icons for the removed app, and every
+                            // choice made in a removed icon pack.
+                            IconPackChoices choices = iconChoices;
+                            boolean appChoices = choices.removeApp(pkg);
+                            boolean packChoices = choices.removePack(pkg);
+                            if (appChoices || packChoices) saveIconChoices();
                         }
                         noteIconPackPackageEvent(intent, action, pkg);
                     }
@@ -2338,6 +2356,11 @@ public class LauncherActivity extends Activity {
         renameInput = null;
         if (activeRenameDialog != null && activeRenameDialog.isShowing()) {
             activeRenameDialog.dismiss();
+        }
+        AlertDialog activePackIconDialog = packIconDialog;
+        packIconDialog = null;
+        if (activePackIconDialog != null && activePackIconDialog.isShowing()) {
+            activePackIconDialog.dismiss();
         }
         if (iconCache != null) iconCache.evictAll();
         if (bannerCache != null) bannerCache.evictAll();
@@ -3869,8 +3892,7 @@ public class LauncherActivity extends Activity {
         @Override public boolean menuAppHasCustomIcon() {
             AppInfo app = (dragIndex >= 0 && dragIndex < displayed.size())
                     ? displayed.get(dragIndex) : null;
-            CustomIconStore store = LauncherActivity.this.customIconStore;
-            return app != null && store != null && store.has(app.packageName);
+            return app != null && LauncherActivity.this.hasIconOverride(app);
         }
         @Override public void onMenuHide() {
             if (!reorderMode) return;
@@ -3895,10 +3917,11 @@ public class LauncherActivity extends Activity {
         @Override public void onMenuChangeIcon() {
             if (!reorderMode) return;
             menuSelection = MENU_CHANGE_ICON;
-            AppInfo app = (dragIndex >= 0 && dragIndex < displayed.size())
-                    ? displayed.get(dragIndex) : null;
+            int idx = dragIndex;
+            AppInfo app = (idx >= 0 && idx < displayed.size())
+                    ? displayed.get(idx) : null;
             exitReorderMode(false);
-            LauncherActivity.this.openCustomIconPicker(app);
+            LauncherActivity.this.openIconChooser(app, false, idx);
         }
         @Override public void onMenuResetIcon() {
             if (!reorderMode) return;
@@ -5281,8 +5304,7 @@ public class LauncherActivity extends Activity {
         @Override public boolean menuAppHasCustomIcon() {
             AppInfo app = (dragIndex >= 0 && dragIndex < displayed.size())
                     ? displayed.get(dragIndex) : null;
-            CustomIconStore store = LauncherActivity.this.customIconStore;
-            return app != null && store != null && store.has(app.packageName);
+            return app != null && LauncherActivity.this.hasIconOverride(app);
         }
         @Override public void onMenuHide() {
             if (!reorderMode) return;
@@ -5307,7 +5329,7 @@ public class LauncherActivity extends Activity {
             exitReorderMode(false);
             LauncherActivity.this.pendingDrawerFocusIdx = Math.max(0, idx);
             LauncherActivity.this.keepDrawerOpenOnResume =
-                    LauncherActivity.this.openCustomIconPicker(app);
+                    LauncherActivity.this.openIconChooser(app, true, idx);
         }
         @Override public void onMenuResetIcon() {
             if (!reorderMode) return;
@@ -9613,7 +9635,9 @@ public class LauncherActivity extends Activity {
 
     private long customIconSourceVersion(String packageName) {
         CustomIconStore store = customIconStore;
-        return store != null ? store.sourceVersion(packageName) : 0L;
+        long custom = store != null ? store.sourceVersion(packageName) : 0L;
+        Long choice = packageName != null ? iconChoiceVersions.get(packageName) : null;
+        return custom + (choice != null ? choice : 0L);
     }
 
     private void preWarmIcon(AppInfo app) {
@@ -9720,7 +9744,11 @@ public class LauncherActivity extends Activity {
         }
         IconPack pack = iconPack;
         String variant = pack != null ? pack.cacheVariant : null;
-        if (dc != null) {
+        // Hand-picked pack icons skip the disk tier, like custom images: they
+        // are few, and skipping it means a new choice can never be shadowed
+        // by the previously cached automatic icon.
+        boolean handPicked = handPickedIconName(app) != null;
+        if (dc != null && !handPicked) {
             Bitmap fromDisk = dc.tryRead(app.packageName, iconPx, variant);
             if (fromDisk != null) return fromDisk;
         }
@@ -9737,16 +9765,31 @@ public class LauncherActivity extends Activity {
             Drawable d = resolveIconDrawable(app);
             fresh = (d != null) ? IconRenderer.process(d, iconPx) : null;
         }
-        if (fresh != null && dc != null) dc.writeAsync(app.packageName, iconPx, variant, fresh);
+        if (fresh != null && dc != null && !handPicked) {
+            dc.writeAsync(app.packageName, iconPx, variant, fresh);
+        }
         return fresh;
     }
 
-    /** Selected icon pack's artwork for an app, or {@code null} when no pack
-     *  is active, the app is a TV input, or the pack has no safe mapping.
-     *  Caller owns (and recycles) the returned bitmap. Worker thread only. */
+    /** Drawable name the user picked for this app in the active pack, or {@code null}. */
+    private String handPickedIconName(AppInfo app) {
+        IconPack pack = iconPack;
+        if (pack == null || app == null || app.tvInputId != null) return null;
+        return iconChoices.get(pack.packageName, app.packageName);
+    }
+
+    /** Selected icon pack's artwork for an app: the hand-picked icon when there
+     *  is one, else the pack's automatic mapping. {@code null} when no pack is
+     *  active, the app is a TV input, or nothing loads. Caller owns (and
+     *  recycles) the returned bitmap. Worker thread only. */
     private Bitmap loadIconPackArtwork(AppInfo app) {
         IconPack pack = iconPack;
         if (pack == null || app == null || app.tvInputId != null) return null;
+        String picked = iconChoices.get(pack.packageName, app.packageName);
+        if (picked != null) {
+            Bitmap chosen = pack.loadNamedArtwork(picked, 512);
+            if (chosen != null) return chosen;
+        }
         return pack.loadArtwork(app.packageName, app.component);
     }
 
@@ -10153,6 +10196,9 @@ public class LauncherActivity extends Activity {
             showToast(getString(R.string.toast_custom_icon_failed));
             return;
         }
+        // Reset clears both kinds of override: a local image and an icon
+        // hand-picked from the active pack.
+        final boolean clearedChoice = clearHandPickedIcon(app.packageName);
         try {
             executor.execute(() -> {
                 boolean deleted = store.delete(app.packageName);
@@ -10160,7 +10206,7 @@ public class LauncherActivity extends Activity {
                 runOnUiThread(() -> {
                     if (destroyed) return;
                     AppInfo current = findAppByPackage(app.packageName);
-                    if (deleted) {
+                    if (deleted || clearedChoice) {
                         if (isArtworkTargetPresent(app.packageName)) {
                             if (current != null) refreshAppArtwork(current);
                             else loadApps();
@@ -10174,6 +10220,333 @@ public class LauncherActivity extends Activity {
         } catch (java.util.concurrent.RejectedExecutionException ignored) {
             showToast(getString(R.string.toast_custom_icon_failed));
         }
+    }
+
+    // ── Icons hand-picked from the active icon pack ──────────────────────
+
+    /** Most results shown at once; the rest are reached by refining the search. */
+    private static final int PACK_PICKER_RESULTS = 60;
+
+    /** True when the app has a local image or a hand-picked pack icon. */
+    boolean hasIconOverride(AppInfo app) {
+        if (app == null) return false;
+        CustomIconStore store = customIconStore;
+        if (store != null && store.has(app.packageName)) return true;
+        return handPickedIconName(app) != null;
+    }
+
+    private void saveIconChoices() {
+        prefs.edit().putString(KEY_ICON_PACK_CHOICES, iconChoices.serialize()).apply();
+    }
+
+    private void bumpIconChoiceVersion(String packageName) {
+        iconChoiceVersions.merge(packageName, 1L, Long::sum);
+    }
+
+    /** Clear the active pack's hand-picked icon for an app. Returns {@code true} if one existed. */
+    private boolean clearHandPickedIcon(String packageName) {
+        IconPack pack = iconPack;
+        if (pack == null || !iconChoices.remove(pack.packageName, packageName)) return false;
+        saveIconChoices();
+        bumpIconChoiceVersion(packageName);
+        return true;
+    }
+
+    /** User-facing name of the active pack. */
+    private String iconPackDisplayName(IconPack pack) {
+        try {
+            CharSequence label = pm.getApplicationLabel(pm.getApplicationInfo(pack.packageName, 0));
+            if (label != null && label.length() > 0) return label.toString();
+        } catch (PackageManager.NameNotFoundException | RuntimeException ignored) { /* fall back */ }
+        return pack.packageName;
+    }
+
+    /**
+     * "Change icon" entry point. With an icon pack active, first asks whether
+     * to pick from the pack or from an image file; otherwise opens the image
+     * picker directly. Returns {@code true} only when the system file picker
+     * launched (the drawer uses that to stay open across the pause).
+     */
+    private boolean openIconChooser(AppInfo app, boolean fromDrawer, int focusHint) {
+        if (app == null) return false;
+        IconPack pack = iconPack;
+        if (pack == null || app.tvInputId != null) return openCustomIconPicker(app);
+        String[] items = {
+                getString(R.string.icon_source_pack, iconPackDisplayName(pack)),
+                getString(R.string.icon_source_image),
+        };
+        final boolean[] handedOff = {false};
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle(getString(R.string.icon_source_title, app.label))
+                .setItems(items, (d, which) -> {
+                    handedOff[0] = true;
+                    if (which == 0) {
+                        showPackIconPicker(app, pack, fromDrawer, focusHint);
+                    } else {
+                        boolean launched = openCustomIconPicker(app);
+                        if (fromDrawer) keepDrawerOpenOnResume = launched;
+                        if (!launched) restoreCustomizationFocus(fromDrawer, app.packageName, focusHint);
+                    }
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .create();
+        dialog.setOnDismissListener(ignored -> {
+            if (!handedOff[0] && !destroyed) {
+                restoreCustomizationFocus(fromDrawer, app.packageName, focusHint);
+            }
+        });
+        dialog.show();
+        return false;
+    }
+
+    /**
+     * Searchable grid of every icon in the pack. The search starts from the
+     * app's name, so the likely icon is usually on screen without typing.
+     * Thumbnails load on the icon workers only for the results shown.
+     */
+    private void showPackIconPicker(AppInfo app, IconPack pack, boolean fromDrawer, int focusHint) {
+        ThreadPoolExecutor executor = iconExecutor;
+        if (app == null || pack == null || executor == null) return;
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        Context ctx = builder.getContext();
+        final int thumbPx = dp(56);
+
+        android.widget.LinearLayout content = new android.widget.LinearLayout(ctx);
+        content.setOrientation(android.widget.LinearLayout.VERTICAL);
+        content.setPadding(dp(24), dp(8), dp(24), 0);
+
+        EditText search = new EditText(ctx);
+        search.setSingleLine(true);
+        search.setHint(R.string.pack_picker_search_hint);
+        search.setContentDescription(getString(R.string.pack_picker_search_hint));
+        search.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+        search.setImeOptions(EditorInfo.IME_ACTION_SEARCH);
+        search.setText(app.label);
+        content.addView(search, new android.widget.LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        TextView status = new TextView(ctx);
+        status.setText(R.string.pack_picker_loading);
+        status.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 12);
+        status.setAlpha(0.7f);
+        status.setPadding(0, dp(4), 0, dp(8));
+        content.addView(status);
+
+        android.widget.GridView grid = new android.widget.GridView(ctx);
+        grid.setNumColumns(6);
+        grid.setStretchMode(android.widget.GridView.STRETCH_COLUMN_WIDTH);
+        grid.setVerticalSpacing(dp(6));
+        grid.setHorizontalSpacing(dp(6));
+        android.graphics.drawable.GradientDrawable selector =
+                new android.graphics.drawable.GradientDrawable();
+        selector.setCornerRadius(dp(10));
+        selector.setColor(0x55FFFFFF);
+        grid.setSelector(selector);
+        grid.setDrawSelectorOnTop(false);
+        content.addView(grid, new android.widget.LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(300)));
+
+        final List<String> results = new ArrayList<>();
+        final LruCache<String, Bitmap> thumbs = new LruCache<String, Bitmap>(6 * 1024 * 1024) {
+            @Override protected int sizeOf(String k, Bitmap v) { return v.getByteCount(); }
+        };
+        final Set<String> requested = new HashSet<>();
+        final Set<String> failed = new HashSet<>();
+        final IconPackCatalog[] catalog = {null};
+        final AlertDialog[] dialogRef = {null};
+
+        final android.widget.BaseAdapter adapter = new android.widget.BaseAdapter() {
+            @Override public int getCount() { return results.size(); }
+            @Override public Object getItem(int i) { return results.get(i); }
+            @Override public long getItemId(int i) { return i; }
+            @Override public View getView(int i, View convert, ViewGroup parent) {
+                android.widget.LinearLayout cell = (android.widget.LinearLayout) convert;
+                ImageView iv;
+                TextView tv;
+                if (cell == null) {
+                    cell = new android.widget.LinearLayout(ctx);
+                    cell.setOrientation(android.widget.LinearLayout.VERTICAL);
+                    cell.setGravity(Gravity.CENTER_HORIZONTAL);
+                    cell.setPadding(dp(4), dp(6), dp(4), dp(4));
+                    iv = new ImageView(ctx);
+                    iv.setScaleType(ImageView.ScaleType.FIT_CENTER);
+                    cell.addView(iv, new android.widget.LinearLayout.LayoutParams(thumbPx, thumbPx));
+                    tv = new TextView(ctx);
+                    tv.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 10);
+                    tv.setSingleLine(true);
+                    tv.setEllipsize(TextUtils.TruncateAt.END);
+                    tv.setGravity(Gravity.CENTER);
+                    tv.setAlpha(0.8f);
+                    cell.addView(tv, new android.widget.LinearLayout.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+                } else {
+                    iv = (ImageView) cell.getChildAt(0);
+                    tv = (TextView) cell.getChildAt(1);
+                }
+                String name = results.get(i);
+                tv.setText(name);
+                cell.setContentDescription(name.replace('_', ' '));
+                iv.setTag(name);
+                Bitmap cached = thumbs.get(name);
+                iv.setImageBitmap(cached);
+                iv.setAlpha(failed.contains(name) ? 0.25f : 1f);
+                if (cached == null && !failed.contains(name) && requested.add(name)) {
+                    try {
+                        executor.execute(() -> {
+                            AlertDialog d0 = dialogRef[0];
+                            if (destroyed || d0 == null || !d0.isShowing()) return;
+                            Bitmap bmp = pack.loadNamedArtwork(name, thumbPx);
+                            runOnUiThread(() -> {
+                                AlertDialog d1 = dialogRef[0];
+                                if (destroyed || d1 == null || !d1.isShowing()) return;
+                                if (bmp != null) thumbs.put(name, bmp); else failed.add(name);
+                                for (int c = 0; c < grid.getChildCount(); c++) {
+                                    View child = grid.getChildAt(c);
+                                    if (!(child instanceof ViewGroup)) continue;
+                                    View img = ((ViewGroup) child).getChildAt(0);
+                                    if (img instanceof ImageView && name.equals(img.getTag())) {
+                                        ((ImageView) img).setImageBitmap(bmp);
+                                        img.setAlpha(bmp != null ? 1f : 0.25f);
+                                    }
+                                }
+                            });
+                        });
+                    } catch (java.util.concurrent.RejectedExecutionException e) {
+                        requested.remove(name);
+                    }
+                }
+                return cell;
+            }
+        };
+        grid.setAdapter(adapter);
+
+        final Runnable runSearch = () -> {
+            IconPackCatalog c = catalog[0];
+            if (c == null) return;
+            results.clear();
+            results.addAll(c.search(search.getText().toString(), PACK_PICKER_RESULTS));
+            adapter.notifyDataSetChanged();
+            if (c.size() == 0) {
+                status.setText(R.string.pack_picker_no_catalog);
+            } else if (results.isEmpty()) {
+                status.setText(R.string.pack_picker_no_results);
+            } else {
+                status.setText(getString(R.string.pack_picker_count, results.size(), c.size()));
+            }
+        };
+        search.addTextChangedListener(new android.text.TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int a, int b, int c) { }
+            @Override public void onTextChanged(CharSequence s, int a, int b, int c) { }
+            @Override public void afterTextChanged(android.text.Editable s) {
+                grid.removeCallbacks(runSearch);
+                grid.postDelayed(runSearch, 150);
+            }
+        });
+
+        AlertDialog dialog = builder
+                .setTitle(getString(R.string.pack_picker_title, app.label))
+                .setView(content)
+                .setNegativeButton(android.R.string.cancel, null)
+                .create();
+        dialogRef[0] = dialog;
+        packIconDialog = dialog;
+
+        grid.setOnItemClickListener((parent, view, position, id) -> {
+            if (position < 0 || position >= results.size()) return;
+            String name = results.get(position);
+            if (failed.contains(name)) {
+                showToast(getString(R.string.toast_pack_icon_failed));
+                return;
+            }
+            applyHandPickedIcon(app, pack, name);
+            dialog.dismiss();
+        });
+        search.setOnEditorActionListener((view, actionId, event) -> {
+            boolean isSearch = actionId == EditorInfo.IME_ACTION_SEARCH
+                    || actionId == EditorInfo.IME_ACTION_DONE;
+            boolean isEnter = event != null && event.getKeyCode() == KeyEvent.KEYCODE_ENTER
+                    && event.getAction() == KeyEvent.ACTION_UP;
+            if (!isSearch && !isEnter) return false;
+            InputMethodManager keyboard =
+                    (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+            if (keyboard != null) keyboard.hideSoftInputFromWindow(search.getWindowToken(), 0);
+            grid.removeCallbacks(runSearch);
+            runSearch.run();
+            if (!results.isEmpty()) {
+                grid.requestFocus();
+                grid.setSelection(0);
+            }
+            return true;
+        });
+        dialog.setOnDismissListener(ignored -> {
+            grid.removeCallbacks(runSearch);
+            thumbs.evictAll();
+            if (packIconDialog == dialog) packIconDialog = null;
+            if (!destroyed) restoreCustomizationFocus(fromDrawer, app.packageName, focusHint);
+        });
+        dialog.setOnShowListener(ignored -> {
+            Window window = dialog.getWindow();
+            if (window != null) {
+                window.setSoftInputMode(
+                        android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN);
+                window.setLayout(Math.min(Math.round(screenW * 0.7f), dp(820)),
+                        ViewGroup.LayoutParams.WRAP_CONTENT);
+            }
+            View cancel = dialog.getButton(AlertDialog.BUTTON_NEGATIVE);
+            if (cancel != null) {
+                cancel.setFocusable(true);
+                cancel.setFocusableInTouchMode(true);
+            }
+        });
+        dialog.show();
+
+        // The icon list can hold 15,000+ names: read it off the UI thread.
+        try {
+            executor.execute(() -> {
+                IconPackCatalog loaded = pack.loadCatalog();
+                runOnUiThread(() -> {
+                    if (destroyed || !dialog.isShowing()) return;
+                    catalog[0] = loaded;
+                    runSearch.run();
+                    if (!results.isEmpty()) {
+                        grid.requestFocus();
+                        grid.setSelection(0);
+                    }
+                });
+            });
+        } catch (java.util.concurrent.RejectedExecutionException e) {
+            status.setText(R.string.pack_picker_no_catalog);
+        }
+    }
+
+    /** Save a hand-picked pack icon for an app and repaint it. A local image
+     *  for the app is removed so the new choice is what shows. */
+    private void applyHandPickedIcon(AppInfo app, IconPack pack, String drawableName) {
+        if (app == null || pack == null || pack != iconPack) return;
+        if (!iconChoices.put(pack.packageName, app.packageName, drawableName)) {
+            showToast(getString(R.string.toast_pack_icon_failed));
+            return;
+        }
+        saveIconChoices();
+        bumpIconChoiceVersion(app.packageName);
+        CustomIconStore store = customIconStore;
+        ThreadPoolExecutor executor = iconExecutor;
+        Runnable refresh = () -> {
+            if (destroyed) return;
+            AppInfo current = findAppByPackage(app.packageName);
+            if (current != null) refreshAppArtwork(current);
+            showToast(getString(R.string.toast_custom_icon_set, app.label));
+        };
+        if (store != null && executor != null && store.has(app.packageName)) {
+            try {
+                executor.execute(() -> {
+                    store.delete(app.packageName);
+                    runOnUiThread(refresh);
+                });
+                return;
+            } catch (java.util.concurrent.RejectedExecutionException ignored) { /* repaint now */ }
+        }
+        refresh.run();
     }
 
     /** Evict both artwork shapes and repaint only cells bound to this identity. */
@@ -10446,7 +10819,8 @@ public class LauncherActivity extends Activity {
                 focusBorderEnabled,
                 focusBorderColor,
                 prefs.getString(KEY_CUSTOM_NAMES, ""),
-                prefs.getString(KEY_ICON_PACK, ""));
+                prefs.getString(KEY_ICON_PACK, ""),
+                iconChoices.serialize());
         try (java.io.OutputStream os = getContentResolver().openOutputStream(uri, "w")) {
             if (os == null) { showToast(getString(R.string.toast_backup_failed)); return; }
             os.write(text.getBytes(java.nio.charset.StandardCharsets.UTF_8));
@@ -10544,6 +10918,18 @@ public class LauncherActivity extends Activity {
                 else ed.putString(KEY_ICON_PACK, restoredPack);
                 iconPackPackage = restoredPack;
                 applyIconPack = !java.util.Objects.equals(restoredPack, appliedIconPackPackage);
+            }
+        }
+        // Hand-picked pack icons. Entries for packs or apps not installed here
+        // are kept (harmless) and apply if they are installed later.
+        if (p.has(SettingsBackup.K_ICON_PACK_CHOICES)) {
+            IconPackChoices restoredChoices = IconPackChoices.parse(
+                    p.str(SettingsBackup.K_ICON_PACK_CHOICES));
+            String serialized = restoredChoices.serialize();
+            if (!serialized.equals(iconChoices.serialize())) {
+                ed.putString(KEY_ICON_PACK_CHOICES, serialized);
+                iconChoices = restoredChoices;
+                applyIconPack = true;   // recreate so every tile re-resolves
             }
         }
         ed.apply();
@@ -11567,6 +11953,7 @@ public class LauncherActivity extends Activity {
         iconPack = pack;
         iconPackPackage = packPkg;
         appliedIconPackPackage = packPkg;
+        iconChoices = IconPackChoices.parse(prefs.getString(KEY_ICON_PACK_CHOICES, ""));
         // The on-disk icon cache. Constructed BEFORE iconCache so the
         // icon-load executor tasks can read from / write to it. Owns
         // its own write executor; shut down in onDestroy(). Entries for

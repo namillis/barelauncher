@@ -63,7 +63,10 @@ final class IconPack {
 
     private final PackageManager pm;
     private final Object lock = new Object();
+    /** Separate from {@link #lock} so named loads never wait on an appfilter parse. */
+    private final Object resourcesLock = new Object();
     private boolean loadAttempted;
+    private boolean resourcesAttempted;
     private IconPackMap map;
     private Resources resources;
 
@@ -132,30 +135,96 @@ final class IconPack {
      */
     Bitmap loadArtwork(String appPackage, ComponentName launchComponent) {
         IconPackMap m = mapping();
-        Resources res = resources;
-        if (m == null || res == null) return null;
+        if (m == null) return null;
         String drawableName = m.drawableFor(appPackage,
                 launchComponent != null ? launchComponent.getClassName() : null,
                 this::phoneLauncherClass);
-        if (drawableName == null) return null;
+        return drawableName != null ? loadNamedArtwork(drawableName, MAX_ARTWORK_PX) : null;
+    }
+
+    /**
+     * Rasterize one of the pack's drawables by resource name, longest side
+     * capped at {@code maxPx}. Returns {@code null} when it does not exist or
+     * fails to load. Worker thread only.
+     */
+    Bitmap loadNamedArtwork(String drawableName, int maxPx) {
+        if (!IconPackMap.isDrawableName(drawableName)) return null;
+        Resources res = resources();
+        if (res == null) return null;
         try {
             int id = res.getIdentifier(drawableName, "drawable", packageName);
             if (id == 0) id = res.getIdentifier(drawableName, "mipmap", packageName);
             if (id == 0) return null;
             Drawable d = res.getDrawable(id, null);
-            return d != null ? rasterize(d) : null;
+            return d != null ? rasterize(d, Math.max(1, Math.min(maxPx, MAX_ARTWORK_PX))) : null;
         } catch (RuntimeException | OutOfMemoryError e) {
             return null;
         }
     }
 
+    /**
+     * Every icon the pack offers, read from {@code drawable.xml} (XML or raw
+     * resource) or, for packs without one, from the appfilter mappings.
+     * Parses on every call; the picker keeps the result only while open.
+     * Worker thread only.
+     */
+    IconPackCatalog loadCatalog() {
+        Resources res = resources();
+        if (res == null) return new IconPackCatalog(null);
+        List<String> names = null;
+        try {
+            int xmlId = res.getIdentifier("drawable", "xml", packageName);
+            if (xmlId != 0) {
+                XmlResourceParser parser = res.getXml(xmlId);
+                try {
+                    names = IconPackCatalog.parseDrawableXml(tags(parser));
+                } finally {
+                    parser.close();
+                }
+            }
+            if (names == null || names.isEmpty()) {
+                int rawId = res.getIdentifier("drawable", "raw", packageName);
+                if (rawId != 0) {
+                    try (InputStream in = res.openRawResource(rawId)) {
+                        XmlPullParser parser = XmlPullParserFactory.newInstance().newPullParser();
+                        parser.setInput(in, null);
+                        names = IconPackCatalog.parseDrawableXml(tags(parser));
+                    }
+                }
+            }
+        } catch (Exception | OutOfMemoryError e) {
+            names = null;
+        }
+        if (names == null || names.isEmpty()) {
+            IconPackMap m = mapping();
+            names = m != null ? m.drawableNames() : null;
+        }
+        return new IconPackCatalog(names);
+    }
+
+    /** The pack's resources, opened once per process. */
+    private Resources resources() {
+        synchronized (resourcesLock) {
+            if (!resourcesAttempted) {
+                resourcesAttempted = true;
+                try {
+                    resources = pm.getResourcesForApplication(packageName);
+                } catch (PackageManager.NameNotFoundException | RuntimeException e) {
+                    resources = null;
+                }
+            }
+            return resources;
+        }
+    }
+
     /** Parse appfilter once per process; later calls reuse the result. */
     private IconPackMap mapping() {
+        Resources res = resources();
         synchronized (lock) {
             if (loadAttempted) return map;
             loadAttempted = true;
+            if (res == null) return null;
             try {
-                Resources res = pm.getResourcesForApplication(packageName);
                 IconPackMap parsed = null;
                 int xmlId = res.getIdentifier("appfilter", "xml", packageName);
                 if (xmlId != 0) {
@@ -176,13 +245,9 @@ final class IconPack {
                         }
                     }
                 }
-                if (parsed != null && parsed.size() > 0) {
-                    map = parsed;
-                    resources = res;
-                }
+                if (parsed != null && parsed.size() > 0) map = parsed;
             } catch (Exception | OutOfMemoryError e) {
                 map = null;
-                resources = null;
             }
             return map;
         }
@@ -199,14 +264,14 @@ final class IconPack {
         }
     }
 
-    private static Bitmap rasterize(Drawable d) {
+    private static Bitmap rasterize(Drawable d, int maxPx) {
         int w = d.getIntrinsicWidth();
         int h = d.getIntrinsicHeight();
         if (w <= 0 || h <= 0) {
             w = DEFAULT_ARTWORK_PX;
             h = DEFAULT_ARTWORK_PX;
         }
-        float scale = Math.min(1f, MAX_ARTWORK_PX / (float) Math.max(w, h));
+        float scale = Math.min(1f, maxPx / (float) Math.max(w, h));
         w = Math.max(1, Math.round(w * scale));
         h = Math.max(1, Math.round(h * scale));
         Bitmap out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);

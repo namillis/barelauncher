@@ -15,6 +15,12 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   pack's phone mapping for the same app, so ordinary phone packs work on TV.
   Unmapped apps keep their own artwork, per-app custom icons still take
   priority, and removing the pack restores system icons automatically.
+- **Pick any icon from the pack.** With a pack active, long-press an app →
+  Change icon → Pick from *pack* opens a searchable grid of every icon the
+  pack contains, starting from the app's name. The choice is saved as a
+  reference, so it follows pack updates, applies only while that pack is
+  selected, and is included in backups. Reset icon returns to the automatic
+  icon.
 
 ## [2.6.1] — 2026-09-22
 

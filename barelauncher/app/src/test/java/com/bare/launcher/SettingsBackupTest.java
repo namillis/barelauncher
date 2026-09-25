@@ -21,7 +21,7 @@ public class SettingsBackupTest {
 
         SettingsBackup.Parsed parsed = SettingsBackup.parse(SettingsBackup.serialize(
                 "com.example", 4, "183=com.example", "com.hidden", 1,
-                6, 20, true, 0xFFFFFFFF, customNames, ""));
+                6, 20, true, 0xFFFFFFFF, customNames, "", ""));
 
         assertNotNull(parsed);
         assertEquals(names,
@@ -41,7 +41,7 @@ public class SettingsBackupTest {
 
     @Test public void serialize_nullCustomNames_writesPresentEmptyField() {
         SettingsBackup.Parsed parsed = SettingsBackup.parse(SettingsBackup.serialize(
-                "", 1, "", "", 0, 6, 20, true, 0xFFFFFFFF, null, null));
+                "", 1, "", "", 0, 6, 20, true, 0xFFFFFFFF, null, null, null));
 
         assertNotNull(parsed);
         assertTrue(parsed.has(SettingsBackup.K_CUSTOM_NAMES));
@@ -50,7 +50,7 @@ public class SettingsBackupTest {
 
     @Test public void serializeAndParse_roundTripsLayoutOptions() {
         SettingsBackup.Parsed parsed = SettingsBackup.parse(SettingsBackup.serialize(
-                "", 4, "", "", 0, 4, 28, false, 0xFF00E5FF, "", ""));
+                "", 4, "", "", 0, 4, 28, false, 0xFF00E5FF, "", "", ""));
 
         assertNotNull(parsed);
         assertEquals(4, parsed.intVal(SettingsBackup.K_LAYOUT_COLUMNS, -1));
@@ -62,10 +62,12 @@ public class SettingsBackupTest {
 
     @Test public void serializeAndParse_roundTripsIconPack() {
         SettingsBackup.Parsed parsed = SettingsBackup.parse(SettingsBackup.serialize(
-                "", 4, "", "", 0, 6, 20, true, 0xFFFFFFFF, "", "com.example.pack"));
+                "", 4, "", "", 0, 6, 20, true, 0xFFFFFFFF, "", "com.example.pack", "com.example.pack/com.app=app_alt"));
 
         assertNotNull(parsed);
         assertEquals("com.example.pack", parsed.str(SettingsBackup.K_ICON_PACK));
+        assertEquals("com.example.pack/com.app=app_alt",
+                parsed.str(SettingsBackup.K_ICON_PACK_CHOICES));
     }
 
     @Test public void parse_backupWithoutIconPack_leavesFieldAbsent() {
