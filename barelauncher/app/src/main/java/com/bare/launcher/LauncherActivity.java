@@ -300,12 +300,29 @@ public class LauncherActivity extends Activity {
     private WallpaperController wallpaperCtl;
     private TextView           clockView;
     private View               netBtn;
-    /** Live WiFi-connected state driving the netBtn glyph (filled when
-     *  connected, outline when not). Updated by {@link #netCallback} and on
-     *  resume; UI-thread only. */
-    private boolean            wifiConnected = false;
+    /** Live network-type state driving the netBtn glyph. One of
+     *  {@link #NET_NONE}, {@link #NET_WIFI}, {@link #NET_ETHERNET}. Updated by
+     *  {@link #netCallback} and on resume; UI-thread only. */
+    private int                netState = NET_NONE;
+    private static final int   NET_NONE     = 0;
+    private static final int   NET_WIFI     = 1;
+    private static final int   NET_ETHERNET = 2;
     private android.net.ConnectivityManager connMgr = null;
     private android.net.ConnectivityManager.NetworkCallback netCallback = null;
+    /** BT status pill (shown only on devices with a Bluetooth radio — see
+     *  {@link #hasBluetooth}). Null when the device has no BT feature. */
+    private View               btBtn = null;
+    /** Live BT state choosing the btBtn icon (connected / on / off). Updated
+     *  by {@link #btReceiver} and on resume; UI-thread only. */
+    private boolean            btOn        = false;
+    private boolean            btConnected = false;
+    private android.bluetooth.BluetoothAdapter btAdapter = null;
+    /** True once {@link PackageManager#FEATURE_BLUETOOTH} is confirmed; cached
+     *  so the per-resume state refresh and the layout gate agree. */
+    private boolean            hasBluetooth = false;
+    /** ACL + adapter-state receiver that repaints the BT pill live. Null until
+     *  registered in {@link #onResume}; unregistered in {@link #onDestroy}. */
+    private BroadcastReceiver  btReceiver = null;
     private FavoritesBlurView   favoritesBlurLayer;
     /** Temporary full-screen blur overlay. Legacy TVs keep the cached bitmap
      *  here while the drawer is open; modern TVs use it only during the
@@ -2081,8 +2098,10 @@ public class LauncherActivity extends Activity {
         hideSystemUI();
         startClock();
         registerTimeReceiver();
-        registerNetworkCallback();   // live WiFi-state for the netBtn glyph
-        refreshWifiState();          // pick up any change while we were away
+        registerNetworkCallback();   // live net-type (wifi/ethernet) for netBtn
+        refreshNetState();           // pick up any change while we were away
+        registerBtReceiver();        // live BT-state for the btBtn glyph
+        refreshBtState();            // pick up any change while we were away
         // Wallpaper slideshow: resume the foreground rotation timer, and (once
         // per process) roll to a new image in "each restart" mode. Both are
         // no-ops when slideshow is off / no folder is set. Done after the
@@ -2246,6 +2265,7 @@ public class LauncherActivity extends Activity {
         unregisterPkgReceiver();
         unregisterTimeReceiver();
         unregisterNetworkCallback();
+        unregisterBtReceiver();
         // Cancel any in-flight toast. Toast.makeText(this, ...) holds a
         // strong reference to the activity through its TN binder on older
         // ROMs; without an explicit cancel a 3.5 s "long" toast in flight
@@ -2340,6 +2360,7 @@ public class LauncherActivity extends Activity {
         wallpaperFront = null; wallpaperBack = null; clockView = null; shelf = null;
         drawer = null;
         netBtn = null; favoritesBlurLayer = null; ringView = null; root = null;
+        btBtn = null; btAdapter = null;
         mapperBtnView = null;
         settingsOverlay = null; settingsCard = null; settingsTitleView = null;
         settingsColumn = null; settingsHintView = null;
@@ -2771,6 +2792,27 @@ public class LauncherActivity extends Activity {
         netBtn.setClipBounds(null);
         netBtn.setContentDescription(getString(R.string.cd_network_settings));
         root.addView(netBtn);
+
+        // BT status pill — leftmost in the cluster, two strides from the right
+        // edge: [ bt ] [ wifi ] [ gear ]. Only built on devices that actually
+        // have a Bluetooth radio (mirrors the TV-input tiles only appearing on
+        // TVs with inputs). On a BT-less box the cluster stays [ wifi ] [ gear ]
+        // exactly as before and nothing in the d-pad chain changes, because the
+        // wifi/gear key handlers test btBtn for null before routing to it.
+        hasBluetooth = getPackageManager()
+                .hasSystemFeature(PackageManager.FEATURE_BLUETOOTH);
+        if (hasBluetooth) {
+            btBtn = buildBtBtn(BTN_SZ);
+            FrameLayout.LayoutParams btLp = new FrameLayout.LayoutParams(BTN_VIEW_SZ, BTN_VIEW_SZ);
+            btLp.gravity = Gravity.TOP | Gravity.END;
+            btLp.topMargin = MARG_T;
+            // Two stride steps from the right edge (left of the WiFi pill).
+            btLp.setMarginEnd(MARG_E + 2 * (BTN_VIEW_SZ + BTN_GAP));
+            btBtn.setLayoutParams(btLp);
+            btBtn.setClipBounds(null);
+            btBtn.setContentDescription(getString(R.string.cd_bluetooth_settings));
+            root.addView(btBtn);
+        }
 
         View mpLocal = buildMapperBtn(BTN_SZ);
         mapperBtnView = mpLocal;
@@ -3275,21 +3317,21 @@ public class LauncherActivity extends Activity {
 
     private View buildNetBtn(int sz) {
         View v = new View(this) {
-            // WiFi status pill. The mark is a filled "slice" (sector) when WiFi
-            // is connected and an outline-only slice when it is not — a minimal,
-            // at-a-glance connectivity indicator. Short-press opens WiFi
-            // settings; long-press opens Bluetooth settings.
+            // Network status pill, using Material Symbols Rounded icons:
+            //   • Wi-Fi connected  → "wifi"
+            //   • not connected    → "wifi_off" (the slashed mark)
+            //   • Ethernet         → "settings_ethernet"
+            // Short-press opens network settings.
             //
             // Colour rule: no plate when idle (the mark floats over the
             // wallpaper, whole-view alpha lowered); on focus the frosted-white
             // plate + rim returns as the selection indicator and the mark
             // inverts to dark.
-            private final Paint fill      = makeBtnPaint(true);
-            private final Paint stroke    = makeBtnStrokePaint();
-            private final Paint bgFocus   = makeBgFocusPaint();
-            private final Paint rim       = makeRimPaint();
-            private final RectF oval      = new RectF();
-            private final android.graphics.Path slice = new android.graphics.Path();
+            private final Paint bgFocus = makeBgFocusPaint();
+            private final Paint rim     = makeRimPaint();
+            private final android.graphics.drawable.Drawable icWifi    = loadPillIcon(R.drawable.ic_net_wifi);
+            private final android.graphics.drawable.Drawable icWifiOff = loadPillIcon(R.drawable.ic_net_wifi_off);
+            private final android.graphics.drawable.Drawable icEth     = loadPillIcon(R.drawable.ic_net_ethernet);
             @Override protected void onDraw(Canvas c) {
                 int w = getWidth(), h = getHeight();
                 if (w <= 0 || h <= 0) return;
@@ -3301,56 +3343,11 @@ public class LauncherActivity extends Activity {
                     c.drawCircle(cx, cy, r, bgFocus);
                     c.drawCircle(cx, cy, r - rim.getStrokeWidth() / 2f, rim);
                 }
-                int symbolColor = focused ? 0xFF0F0F12 : 0xFFFFFFFF;
-
-                // Slice: vertex at the bottom, a ~92° arc across the top,
-                // centred on straight-up (270°), so it reads as an upright
-                // WiFi "fan". Filled when connected, outline when not.
-                float ic   = r * 0.96f;
-                float vx   = cx;
-                float vy   = cy + ic * 0.46f;     // vertex below centre
-                float rad  = ic * 1.02f;          // arc radius from the vertex
-                float half = 46f;                 // half sweep angle
-                oval.set(vx - rad, vy - rad, vx + rad, vy + rad);
-                slice.reset();
-                slice.moveTo(vx, vy);
-                slice.arcTo(oval, 270f - half, half * 2f);
-                slice.close();
-
-                float strokeW = Math.max(dp(1), ic * 0.11f);
-                // Idle (no plate): draw a soft dark shadow first so the white
-                // mark stays visible on light / white wallpapers.
-                if (!focused) {
-                    float sh = Math.max(1f, density) * 1.5f;
-                    c.save();
-                    c.translate(0f, sh);
-                    if (wifiConnected) {
-                        fill.setColor(0x59000000);
-                        fill.setStyle(Paint.Style.FILL);
-                        c.drawPath(slice, fill);
-                    } else {
-                        stroke.setColor(0x59000000);
-                        stroke.setStyle(Paint.Style.STROKE);
-                        stroke.setStrokeWidth(strokeW);
-                        stroke.setStrokeJoin(Paint.Join.ROUND);
-                        stroke.setStrokeCap(Paint.Cap.ROUND);
-                        c.drawPath(slice, stroke);
-                    }
-                    c.restore();
-                }
-
-                if (wifiConnected) {
-                    fill.setColor(symbolColor);
-                    fill.setStyle(Paint.Style.FILL);
-                    c.drawPath(slice, fill);
-                } else {
-                    stroke.setColor(symbolColor);
-                    stroke.setStyle(Paint.Style.STROKE);
-                    stroke.setStrokeWidth(strokeW);
-                    stroke.setStrokeJoin(Paint.Join.ROUND);
-                    stroke.setStrokeCap(Paint.Cap.ROUND);
-                    c.drawPath(slice, stroke);
-                }
+                android.graphics.drawable.Drawable ic =
+                        netState == NET_ETHERNET ? icEth
+                        : netState == NET_WIFI   ? icWifi
+                        : icWifiOff;
+                drawPillIcon(c, ic, cx, cy, r, focused);
             }
         };
         applyPillStyle(v);
@@ -3386,9 +3383,12 @@ public class LauncherActivity extends Activity {
                     if (sd != null) sd.requestFocusOnIndex(0);
                     return true;
                 case KeyEvent.KEYCODE_DPAD_LEFT:
-                    // Leftmost in the toolbar cluster — wrap to the last
-                    // shelf cell. Symmetric with the gear's RIGHT-wraps-
-                    // to-first-shelf-cell behaviour.
+                    // With the BT pill present it is WiFi's left neighbour;
+                    // land on it. Without it (BT-less box) WiFi is the
+                    // leftmost pill and LEFT wraps to the last shelf cell —
+                    // symmetric with the gear's RIGHT-wraps-to-first behaviour.
+                    View btLeft = btBtn;
+                    if (btLeft != null) { btLeft.requestFocus(); return true; }
                     RecyclingShelfView sl = shelf;
                     if (sl != null) sl.requestFocusOnIndex(sl.lastIndex());
                     return true;
@@ -3396,6 +3396,78 @@ public class LauncherActivity extends Activity {
                     // Gear is the only neighbour to the right.
                     View mb = mapperBtnView;
                     if (mb != null) { mb.requestFocus(); return true; }
+                    RecyclingShelfView sr = shelf;
+                    if (sr != null) sr.requestFocusOnIndex(0);
+                    return true;
+                default: return false;
+            }
+        });
+        return v;
+    }
+
+    /** BT status pill (v2.3.0) — the leftmost toolbar pill, present only on
+     *  devices with a Bluetooth radio. Same look and focus behaviour as
+     *  {@link #buildNetBtn}. Icons are Material Symbols Rounded:
+     *  "bluetooth_connected" when a device is connected, "bluetooth" when the
+     *  adapter is on with nothing connected, "bluetooth_disabled" when it is
+     *  off. Short-press opens system Bluetooth settings via a fallback chain
+     *  ({@link #openBtSettings}); there is no in-launcher pairing UI. */
+    private View buildBtBtn(int sz) {
+        View v = new View(this) {
+            private final Paint bgFocus = makeBgFocusPaint();
+            private final Paint rim     = makeRimPaint();
+            private final android.graphics.drawable.Drawable icBt     = loadPillIcon(R.drawable.ic_bt);
+            private final android.graphics.drawable.Drawable icBtConn = loadPillIcon(R.drawable.ic_bt_connected);
+            private final android.graphics.drawable.Drawable icBtOff  = loadPillIcon(R.drawable.ic_bt_off);
+            @Override protected void onDraw(Canvas c) {
+                int w = getWidth(), h = getHeight();
+                if (w <= 0 || h <= 0) return;
+                boolean focused = isFocused();
+                float scale = focused ? 1f : 0.86f;
+                float cx = w / 2f, cy = h / 2f;
+                float r = Math.min(cx, cy) * scale;
+                if (focused) {
+                    c.drawCircle(cx, cy, r, bgFocus);
+                    c.drawCircle(cx, cy, r - rim.getStrokeWidth() / 2f, rim);
+                }
+                android.graphics.drawable.Drawable ic =
+                        !btOn       ? icBtOff
+                        : btConnected ? icBtConn
+                        : icBt;
+                drawPillIcon(c, ic, cx, cy, r, focused);
+            }
+        };
+        applyPillStyle(v);
+        v.setOnClickListener(view -> {
+            view.playSoundEffect(SoundEffectConstants.CLICK);
+            openBtSettings();
+        });
+        v.setAlpha(0.6f);   // dimmed when idle; brightens to full on focus
+        v.setOnFocusChangeListener((view, f) -> {
+            view.animate().cancel();
+            view.animate().scaleX(f ? BTN_FOCUS_SCALE : 1f).scaleY(f ? BTN_FOCUS_SCALE : 1f)
+                    .alpha(f ? 1f : 0.6f)
+                    .setDuration(100).setInterpolator(FOCUS_EASE).start();
+            view.invalidate();
+        });
+        v.setOnKeyListener((view, kc, ev) -> {
+            if (ev.getAction() != KeyEvent.ACTION_DOWN) return false;
+            switch (kc) {
+                case KeyEvent.KEYCODE_DPAD_DOWN:
+                    // Leftmost pill → first shelf cell (the cell visually below
+                    // it), consistent with the WiFi pill's old DOWN target.
+                    RecyclingShelfView sd = shelf;
+                    if (sd != null) sd.requestFocusOnIndex(0);
+                    return true;
+                case KeyEvent.KEYCODE_DPAD_LEFT:
+                    // Leftmost in the cluster — wrap to the last shelf cell,
+                    // the role the WiFi pill held before BT was inserted.
+                    RecyclingShelfView sl = shelf;
+                    if (sl != null) sl.requestFocusOnIndex(sl.lastIndex());
+                    return true;
+                case KeyEvent.KEYCODE_DPAD_RIGHT:
+                    // WiFi is BT's right neighbour.
+                    View nb = netBtn; if (nb != null) { nb.requestFocus(); return true; }
                     RecyclingShelfView sr = shelf;
                     if (sr != null) sr.requestFocusOnIndex(0);
                     return true;
@@ -3513,20 +3585,44 @@ public class LauncherActivity extends Activity {
         return v;
     }
 
+    private android.graphics.drawable.Drawable loadPillIcon(int resId) {
+        try {
+            android.graphics.drawable.Drawable d = getDrawable(resId);
+            return d != null ? d.mutate() : null;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /** Draw a toolbar-pill icon centred on (cx,cy), sized to the pill radius.
+     *  Idle: the same soft drop shadow the gear uses, then white. Focused: dark,
+     *  over the frosted plate. */
+    private void drawPillIcon(Canvas c, android.graphics.drawable.Drawable d,
+                              float cx, float cy, float r, boolean focused) {
+        if (d == null) return;
+        int half = Math.round(r * 0.62f);
+        int l = Math.round(cx) - half, t = Math.round(cy) - half;
+        d.setBounds(l, t, l + 2 * half, t + 2 * half);
+        if (!focused) {
+            float sh = Math.max(1f, density) * 1.5f;
+            c.save();
+            c.translate(0f, sh);
+            d.setTint(0x59000000);
+            d.draw(c);
+            c.restore();
+            d.setTint(ToolbarStyle.SYMBOL_IDLE);
+        } else {
+            d.setTint(ToolbarStyle.SYMBOL_FOCUSED);
+        }
+        d.draw(c);
+    }
+
     /** Common toolbar-pill setup is centralised in {@link ToolbarStyle}.
      *  This wrapper exists only so the button-construction call sites
      *  (which call {@code applyPillStyle(v)} unqualified) stay tidy. The
      *  body is a one-liner forwarding to the shared helper. */
     private void applyPillStyle(View v) {
         ToolbarStyle.applyPillStyle(v);
-    }
-
-    private Paint makeBtnPaint(boolean fill) {
-        return ToolbarStyle.makeBtnPaint(fill);
-    }
-
-    private Paint makeBtnStrokePaint() {
-        return ToolbarStyle.makeBtnStrokePaint();
     }
 
     /** Idle button background — dark glass that reads on any wallpaper. */
@@ -3555,6 +3651,28 @@ public class LauncherActivity extends Activity {
         showToast(getString(R.string.toast_no_network_settings));
     }
 
+    /** Open the device's Bluetooth settings via a fallback chain, newest/most-
+     *  specific action first. The accessory-pairing / BT settings activity
+     *  varies across TV ROMs — the single-action version of this shortcut was
+     *  retired for exactly that reason — so we try, in order: the dedicated
+     *  Bluetooth settings screen, the Android TV "connected devices" category,
+     *  the generic wireless screen, then plain Settings, and only toast if the
+     *  device resolves none of them. This is the same defensive pattern as
+     *  {@link #openNetSettings}, which is why the shortcut is reliable now. */
+    private void openBtSettings() {
+        String[] actions = {
+            Settings.ACTION_BLUETOOTH_SETTINGS,
+            "android.settings.BLUETOOTH_SETTINGS",
+            Settings.ACTION_WIRELESS_SETTINGS,
+            Settings.ACTION_SETTINGS
+        };
+        for (String a : actions) {
+            try { startActivity(new Intent(a).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); return; }
+            catch (Exception ignored) {}
+        }
+        showToast(getString(R.string.toast_no_bluetooth_settings));
+    }
+
     /** Open the device's general system Settings. Bound to the WiFi
      *  pill's long-press so the most-needed-second-tier shortcut is
      *  one gesture away from the most-used first-tier shortcut. Falls
@@ -3578,10 +3696,10 @@ public class LauncherActivity extends Activity {
             connMgr = (android.net.ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE);
             if (connMgr == null) return;
             netCallback = new android.net.ConnectivityManager.NetworkCallback() {
-                @Override public void onAvailable(android.net.Network n) { postWifiRefresh(); }
-                @Override public void onLost(android.net.Network n) { postWifiRefresh(); }
+                @Override public void onAvailable(android.net.Network n) { postNetRefresh(); }
+                @Override public void onLost(android.net.Network n) { postNetRefresh(); }
                 @Override public void onCapabilitiesChanged(
-                        android.net.Network n, android.net.NetworkCapabilities caps) { postWifiRefresh(); }
+                        android.net.Network n, android.net.NetworkCapabilities caps) { postNetRefresh(); }
             };
             connMgr.registerDefaultNetworkCallback(netCallback);
         } catch (Exception ignored) { netCallback = null; }
@@ -3594,31 +3712,137 @@ public class LauncherActivity extends Activity {
         netCallback = null;
     }
 
-    private void postWifiRefresh() { uiHandler.post(this::refreshWifiState); }
+    private void postNetRefresh() { uiHandler.post(this::refreshNetState); }
 
-    /** Recompute WiFi-connected state; repaint the pill only on a change. */
-    private void refreshWifiState() {
-        boolean c = isWifiConnected();
-        if (c != wifiConnected) {
-            wifiConnected = c;
+    /** Recompute network-type state; repaint the pill only on a change. */
+    private void refreshNetState() {
+        int s = computeNetState();
+        if (s != netState) {
+            netState = s;
             View nb = netBtn;
             if (nb != null) nb.invalidate();
         }
     }
 
-    private boolean isWifiConnected() {
+    /** Classify the active network as Ethernet, Wi-Fi, or none. Ethernet is
+     *  checked first so a wired TV box shows the port glyph even if a Wi-Fi
+     *  radio is also up; falls back to Wi-Fi, then none. A cellular / other
+     *  transport reads as {@link #NET_NONE} (this launcher's pill speaks only
+     *  Wi-Fi / Ethernet, which covers the TV domain). */
+    private int computeNetState() {
         try {
             android.net.ConnectivityManager cm = (connMgr != null) ? connMgr
                     : (android.net.ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE);
-            if (cm == null) return false;
+            if (cm == null) return NET_NONE;
             android.net.Network n = cm.getActiveNetwork();
-            if (n == null) return false;
+            if (n == null) return NET_NONE;
             android.net.NetworkCapabilities caps = cm.getNetworkCapabilities(n);
-            return caps != null
-                    && caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI);
+            if (caps == null) return NET_NONE;
+            if (caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_ETHERNET))
+                return NET_ETHERNET;
+            if (caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI))
+                return NET_WIFI;
+            return NET_NONE;
         } catch (Exception e) {
+            return NET_NONE;
+        }
+    }
+
+    /** Register the ACL + adapter-state receiver so the BT pill tracks
+     *  connect / disconnect / power live. No-op when the device has no BT
+     *  radio or the pill was not built. Idempotent. BLUETOOTH_CONNECT (API 31+)
+     *  / BLUETOOTH (≤30) gates the reads; on a denial / stripped ROM the
+     *  try/catch leaves the glyph in its last state. */
+    private void registerBtReceiver() {
+        if (!hasBluetooth || btReceiver != null) return;
+        if (btAdapter() == null) return;
+        try {
+            btReceiver = new BroadcastReceiver() {
+                @Override public void onReceive(Context ctx, Intent it) { postBtRefresh(); }
+            };
+            IntentFilter f = new IntentFilter();
+            f.addAction(android.bluetooth.BluetoothAdapter.ACTION_STATE_CHANGED);
+            f.addAction(android.bluetooth.BluetoothDevice.ACTION_ACL_CONNECTED);
+            f.addAction(android.bluetooth.BluetoothDevice.ACTION_ACL_DISCONNECTED);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
+                registerReceiver(btReceiver, f, Context.RECEIVER_NOT_EXPORTED);
+            else
+                registerReceiver(btReceiver, f);
+        } catch (SecurityException | IllegalStateException e) {
+            btReceiver = null;
+        }
+    }
+
+    private void unregisterBtReceiver() {
+        if (btReceiver != null) {
+            try { unregisterReceiver(btReceiver); } catch (Exception ignored) { }
+        }
+        btReceiver = null;
+    }
+
+    private void postBtRefresh() { uiHandler.post(this::refreshBtState); }
+
+    /** Recompute BT power + connection state; repaint the pill only on a change. */
+    private void refreshBtState() {
+        if (!hasBluetooth) return;
+        boolean on = isBtOn();
+        boolean conn = on && isBtDeviceConnected();
+        if (on != btOn || conn != btConnected) {
+            btOn = on;
+            btConnected = conn;
+            View b = btBtn;
+            if (b != null) b.invalidate();
+        }
+    }
+
+    private android.bluetooth.BluetoothAdapter btAdapter() {
+        if (btAdapter == null) {
+            android.bluetooth.BluetoothManager bm =
+                    getSystemService(android.bluetooth.BluetoothManager.class);
+            btAdapter = (bm != null) ? bm.getAdapter() : null;
+        }
+        return btAdapter;
+    }
+
+    private boolean isBtOn() {
+        android.bluetooth.BluetoothAdapter a = btAdapter();
+        if (a == null) return false;
+        try {
+            return a.isEnabled();
+        } catch (SecurityException e) {
             return false;
         }
+    }
+
+    /** True when a headset, A2DP or GATT profile reports a connected device.
+     *  A state read only: no scan, no bonding. */
+    private boolean isBtDeviceConnected() {
+        android.bluetooth.BluetoothAdapter a = btAdapter();
+        if (a == null) return false;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+                && checkSelfPermission(android.Manifest.permission.BLUETOOTH_CONNECT)
+                        != PackageManager.PERMISSION_GRANTED) {
+            return false;
+        }
+        int[] profiles = {
+            android.bluetooth.BluetoothProfile.HEADSET,
+            android.bluetooth.BluetoothProfile.A2DP,
+            android.bluetooth.BluetoothProfile.GATT,
+            android.bluetooth.BluetoothProfile.GATT_SERVER
+        };
+        try {
+            for (int p : profiles) {
+                if (a.getProfileConnectionState(p)
+                        == android.bluetooth.BluetoothProfile.STATE_CONNECTED) {
+                    return true;
+                }
+            }
+        } catch (SecurityException e) {
+            return false;
+        } catch (RuntimeException e) {
+            return false;
+        }
+        return false;
     }
 
     /** Draws only the wallpaper pixels behind the favorites plate. Android
