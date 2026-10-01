@@ -20,8 +20,12 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   pill sits next to Wi-Fi and shows whether a device (soundbar, headphones,
   speaker, remote) is connected, Bluetooth is on with nothing connected, or
   Bluetooth is off. Select it to open the system Bluetooth screen to see
-  connected devices and pair new ones. On devices without Bluetooth the pill
-  never appears and the toolbar is unchanged.
+  connected devices and pair new ones. On Android 12 and newer, the first
+  press asks for the Nearby devices permission, which the pill needs to see
+  connected devices. Remotes and controllers don't count as connected, so a TV
+  that pairs its remote over Bluetooth doesn't show "connected" all the time.
+  On devices without Bluetooth the pill never appears and the toolbar is
+  unchanged.
 - The Wi-Fi, Ethernet and Bluetooth icons are
   [Material Symbols](https://github.com/google/material-design-icons) (Apache 2.0).
 

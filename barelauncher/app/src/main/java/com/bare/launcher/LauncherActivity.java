@@ -162,6 +162,7 @@ public class LauncherActivity extends Activity {
     private static final int    REQ_BACKUP_IMPORT = 44;
     private static final int    REQ_PICK_ICON  = 45;
     private static final int    REQ_PERM_MEDIA = 71;   // runtime media-read permission
+    private static final int    REQ_PERM_BT    = 72;   // runtime Nearby devices permission
     private static final String BACKUP_FILENAME   = "barelauncher-settings.txt";
     /** Slideshow duration steps (seconds):
      *  Off, 20s, 30s, 45s, 1m, 1.5m, 2m, 3m. */
@@ -3440,7 +3441,7 @@ public class LauncherActivity extends Activity {
         applyPillStyle(v);
         v.setOnClickListener(view -> {
             view.playSoundEffect(SoundEffectConstants.CLICK);
-            openBtSettings();
+            onBtPillPressed();
         });
         v.setAlpha(0.6f);   // dimmed when idle; brightens to full on focus
         v.setOnFocusChangeListener((view, f) -> {
@@ -3764,6 +3765,11 @@ public class LauncherActivity extends Activity {
             f.addAction(android.bluetooth.BluetoothAdapter.ACTION_STATE_CHANGED);
             f.addAction(android.bluetooth.BluetoothDevice.ACTION_ACL_CONNECTED);
             f.addAction(android.bluetooth.BluetoothDevice.ACTION_ACL_DISCONNECTED);
+            f.addAction(android.bluetooth.BluetoothAdapter.ACTION_CONNECTION_STATE_CHANGED);
+            f.addAction(android.bluetooth.BluetoothA2dp.ACTION_CONNECTION_STATE_CHANGED);
+            f.addAction(android.bluetooth.BluetoothHeadset.ACTION_CONNECTION_STATE_CHANGED);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
+                f.addAction(android.bluetooth.BluetoothLeAudio.ACTION_LE_AUDIO_CONNECTION_STATE_CHANGED);
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
                 registerReceiver(btReceiver, f, Context.RECEIVER_NOT_EXPORTED);
             else
@@ -3814,8 +3820,10 @@ public class LauncherActivity extends Activity {
         }
     }
 
-    /** True when a headset, A2DP or GATT profile reports a connected device.
-     *  A state read only: no scan, no bonding. */
+    /** True when an audio device (headset, A2DP, or LE Audio on API 33+) is
+     *  connected. BT remotes and controllers are not counted, so on a TV that
+     *  pairs its remote over Bluetooth the pill does not read "connected" all
+     *  the time. A state read only: no scan, no bonding. */
     private boolean isBtDeviceConnected() {
         android.bluetooth.BluetoothAdapter a = btAdapter();
         if (a == null) return false;
@@ -3824,12 +3832,12 @@ public class LauncherActivity extends Activity {
                         != PackageManager.PERMISSION_GRANTED) {
             return false;
         }
-        int[] profiles = {
-            android.bluetooth.BluetoothProfile.HEADSET,
-            android.bluetooth.BluetoothProfile.A2DP,
-            android.bluetooth.BluetoothProfile.GATT,
-            android.bluetooth.BluetoothProfile.GATT_SERVER
-        };
+        int[] profiles = (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
+                ? new int[] { android.bluetooth.BluetoothProfile.HEADSET,
+                              android.bluetooth.BluetoothProfile.A2DP,
+                              android.bluetooth.BluetoothProfile.LE_AUDIO }
+                : new int[] { android.bluetooth.BluetoothProfile.HEADSET,
+                              android.bluetooth.BluetoothProfile.A2DP };
         try {
             for (int p : profiles) {
                 if (a.getProfileConnectionState(p)
@@ -3837,12 +3845,30 @@ public class LauncherActivity extends Activity {
                     return true;
                 }
             }
-        } catch (SecurityException e) {
-            return false;
         } catch (RuntimeException e) {
             return false;
         }
         return false;
+    }
+
+    /** BT pill press. On Android 12+ the connected-device state needs the
+     *  Nearby devices permission, so the first press asks for it and opens
+     *  Bluetooth settings once the user answers (see onRequestPermissionsResult).
+     *  After a grant, or once Android stops showing the prompt, a press goes
+     *  straight to settings. */
+    private void onBtPillPressed() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+                && checkSelfPermission(android.Manifest.permission.BLUETOOTH_CONNECT)
+                        != PackageManager.PERMISSION_GRANTED) {
+            try {
+                requestPermissions(
+                        new String[] { android.Manifest.permission.BLUETOOTH_CONNECT },
+                        REQ_PERM_BT);
+                return;
+            } catch (RuntimeException ignored) {
+            }
+        }
+        openBtSettings();
     }
 
     /** Draws only the wallpaper pixels behind the favorites plate. Android
@@ -10783,6 +10809,9 @@ public class LauncherActivity extends Activity {
             } else {
                 showToast(getString(R.string.toast_slideshow_need_permission));
             }
+        } else if (req == REQ_PERM_BT) {
+            refreshBtState();
+            openBtSettings();
         }
     }
 
