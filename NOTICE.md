@@ -69,5 +69,10 @@ software:
 - [JetBrains Java Annotations](https://github.com/JetBrains/java-annotations),
   JetBrains s.r.o.
 
+The Wi-Fi, Ethernet and Bluetooth toolbar icons
+(`res/drawable/ic_net_*.xml`, `res/drawable/ic_bt*.xml`) are
+[Material Symbols](https://github.com/google/material-design-icons) by
+Google, also under the Apache License 2.0.
+
 A copy of the Apache License 2.0 is available at
 <https://www.apache.org/licenses/LICENSE-2.0>.
