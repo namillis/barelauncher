@@ -3833,7 +3833,7 @@ public class LauncherActivity extends Activity {
         try {
             for (int p : profiles) {
                 if (a.getProfileConnectionState(p)
-                        == android.bluetooth.BluetoothProfile.STATE_CONNECTED) {
+                        == android.bluetooth.BluetoothAdapter.STATE_CONNECTED) {
                     return true;
                 }
             }
