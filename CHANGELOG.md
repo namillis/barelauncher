@@ -7,6 +7,16 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+## [2.7.1] — 2026-10-02
+
+### Fixed
+
+- **Bluetooth pill opened the main Settings page on Android TV.** Android TV's
+  Settings app has no standard Bluetooth screen, so the pill fell all the way
+  back to the Settings home page. It now opens the TV's own Bluetooth pairing
+  screen (the one "Pair accessory" opens), and only falls back to the Settings
+  home page if the TV has neither.
+
 ## [2.7.0] — 2026-10-01
 
 ### What's new

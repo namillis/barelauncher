@@ -3652,23 +3652,25 @@ public class LauncherActivity extends Activity {
         showToast(getString(R.string.toast_no_network_settings));
     }
 
-    /** Open the device's Bluetooth settings via a fallback chain, newest/most-
-     *  specific action first. The accessory-pairing / BT settings activity
-     *  varies across TV ROMs — the single-action version of this shortcut was
-     *  retired for exactly that reason — so we try, in order: the dedicated
-     *  Bluetooth settings screen, the Android TV "connected devices" category,
-     *  the generic wireless screen, then plain Settings, and only toast if the
-     *  device resolves none of them. This is the same defensive pattern as
-     *  {@link #openNetSettings}, which is why the shortcut is reliable now. */
+    /** Android TV's Settings app (AOSP TvSettings, Android 14 included) has no
+     *  handler for {@link Settings#ACTION_BLUETOOTH_SETTINGS}; its Bluetooth
+     *  pairing screen is AddAccessoryActivity, reached via CONNECT_INPUT. Some
+     *  ROMs alias the Bluetooth action onto the main Settings activity, so it
+     *  only counts when it resolves somewhere other than plain Settings. */
+    private static final String ACTION_TV_CONNECT_INPUT =
+        "com.google.android.intent.action.CONNECT_INPUT";
+
     private void openBtSettings() {
-        String[] actions = {
-            Settings.ACTION_BLUETOOTH_SETTINGS,
-            "android.settings.BLUETOOTH_SETTINGS",
-            Settings.ACTION_WIRELESS_SETTINGS,
-            Settings.ACTION_SETTINGS
-        };
-        for (String a : actions) {
-            try { startActivity(new Intent(a).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); return; }
+        PackageManager pm = getPackageManager();
+        ComponentName mainSettings = new Intent(Settings.ACTION_SETTINGS).resolveActivity(pm);
+        Intent bt = new Intent(Settings.ACTION_BLUETOOTH_SETTINGS);
+        ComponentName btTarget = bt.resolveActivity(pm);
+        java.util.List<Intent> chain = new java.util.ArrayList<>();
+        if (btTarget != null && !btTarget.equals(mainSettings)) chain.add(bt);
+        chain.add(new Intent(ACTION_TV_CONNECT_INPUT));
+        chain.add(new Intent(Settings.ACTION_SETTINGS));
+        for (Intent i : chain) {
+            try { startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); return; }
             catch (Exception ignored) {}
         }
         showToast(getString(R.string.toast_no_bluetooth_settings));

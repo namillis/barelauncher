@@ -106,6 +106,18 @@
             <category android:name="android.intent.category.LAUNCHER" />
         </intent>
 
+        <intent>
+            <action android:name="android.settings.BLUETOOTH_SETTINGS" />
+        </intent>
+
+        <intent>
+            <action android:name="android.settings.SETTINGS" />
+        </intent>
+
+        <intent>
+            <action android:name="com.google.android.intent.action.CONNECT_INPUT" />
+        </intent>
+
     </queries>
 
     <application
